@@ -1,0 +1,719 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Seguidor de Sonido</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --panel: #ffffff; --ink: #1d2330; --muted: #667085; --line: #d9dde5;
+    --accent: #2563eb; --mic: #0f9d74; --snd: #e8590c; --danger: #d92d20; --limit: rgba(217,45,32,.10);
+    --grid: #e6e9ef; --voz: #7c3aed;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12151c; --panel: #1b1f29; --ink: #e7eaf0; --muted: #98a2b3; --line: #2c3240;
+      --accent: #5b8cff; --mic: #2cc79a; --snd: #ff8a3d; --danger: #f2554a; --limit: rgba(242,85,74,.14);
+      --grid: #252a36; --voz: #a78bfa;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
+           padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  h1 { font-size: 18px; margin: 0; }
+  .estado-con { font-size: 13px; color: var(--muted); }
+  .estado-con b { color: var(--ink); }
+  main { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr); gap: 16px;
+         padding: 16px; max-width: 1200px; margin: 0 auto; }
+  @media (max-width: 820px) { main { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; }
+  canvas { width: 100%; aspect-ratio: 1.6 / 1; display: block; border-radius: 8px; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .datos { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .dato { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .dato span { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .dato b { font-size: 20px; font-variant-numeric: tabular-nums; }
+  .fila { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+           border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primario { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.parar { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 700; flex: 1; padding: 12px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; }
+  input[type=range] { flex: 1; min-width: 120px; accent-color: var(--accent); }
+  input[type=number], input[type=text] { font: inherit; width: 80px; padding: 7px 8px; border: 1px solid var(--line);
+           border-radius: 8px; background: var(--bg); color: var(--ink); }
+  input[type=text] { flex: 1; width: auto; }
+  label.mini { font-size: 13px; color: var(--muted); }
+  details { margin-top: 12px; }
+  summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  pre#consola { height: 160px; overflow: auto; background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+                padding: 8px; font-size: 12px; margin: 8px 0; white-space: pre-wrap; }
+  .pasos { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 10px; }
+  .paso { border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  .paso h3 { margin: 0 0 6px; font-size: 15px; }
+  .paso p { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
+  .medidor { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 13px; }
+  .medidor .barra { flex: 1; height: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .medidor .barra i { display: block; height: 100%; width: 0; background: var(--mic); transition: width .2s; }
+  .medidor b { width: 70px; text-align: right; font-variant-numeric: tabular-nums; }
+  .res { font-size: 13px; background: var(--bg); border-radius: 8px; padding: 8px; margin: 8px 0; min-height: 36px; }
+  .ok { color: var(--mic); font-weight: 600; } .mal { color: var(--danger); font-weight: 600; }
+  .aviso { background: var(--limit); border: 1px solid var(--danger); border-radius: 8px; padding: 8px 10px; font-size: 13px; display: none; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Seguidor de Sonido</h1>
+  <div class="fila" style="margin:0">
+    <span class="estado-con" id="estadoCon">Sin conexión</span>
+    <button class="primario" id="btnConectar">Conectar placa (USB)</button>
+    <button id="btnSim">Modo simulación</button>
+  </div>
+</header>
+
+<main>
+  <section class="card">
+    <h2>Mapa (vista desde arriba)</h2>
+    <div class="aviso" id="aviso"></div>
+    <canvas id="mapa" width="960" height="600"></canvas>
+    <div class="hint" id="hintMapa">Arriba = frente del soporte. Ángulos positivos = izquierda. Zona roja = fuera del límite de giro.</div>
+  </section>
+
+  <section>
+    <div class="card" style="margin-bottom:16px">
+      <h2>Datos en vivo</h2>
+      <div class="datos">
+        <div class="dato"><span>Orientación</span><b id="dPos">–</b></div>
+        <div class="dato"><span>Último sonido</span><b id="dAbs">–</b></div>
+        <div class="dato"><span>Δt entre mics</span><b id="dDt">–</b></div>
+        <div class="dato"><span>Disparó primero</span><b id="dSrc">–</b></div>
+        <div class="dato"><span>Escucha</span><b id="dEsc">–</b></div>
+        <div class="dato"><span>Modo</span><b id="dModo">–</b></div>
+        <div class="dato" title="Sonidos seguidos del mismo lado. Cuanto más larga, más corrige cada sonido"><span>Racha</span><b id="dRacha">–</b></div>
+        <div class="dato"><span>Motor</span><b id="dVel">–</b></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Control</h2>
+      <div class="fila">
+        <button id="btnEscucha" data-req>Escucha: –</button>
+        <div class="seg">
+          <button id="btnAuto" data-req>Automático</button>
+          <button id="btnManual" data-req>Manual</button>
+        </div>
+      </div>
+      <div class="fila">
+        <button data-req data-jog="15">◀ 15°</button>
+        <button data-req data-jog="5">◀ 5°</button>
+        <button data-req id="btnCentro">Centro</button>
+        <button data-req data-jog="-5">5° ▶</button>
+        <button data-req data-jog="-15">15° ▶</button>
+      </div>
+      <div class="fila">
+        <label class="mini" for="slider">Ir a</label>
+        <input type="range" id="slider" min="-120" max="120" step="1" value="0" data-req>
+        <b id="sliderVal" style="width:52px;text-align:right">0°</b>
+        <button data-req id="btnIr">Ir</button>
+      </div>
+      <div class="fila"><button class="parar" id="btnParar" data-req>PARAR</button></div>
+
+      <details>
+        <summary>Configuración</summary>
+        <div class="fila" style="margin-top:10px">
+          <label class="mini">Micrófonos</label>
+          <div class="seg">
+            <button id="btnGiran" data-req>Giran con el soporte</button>
+            <button id="btnFijos" data-req>Fijos</button>
+          </div>
+        </div>
+        <div class="fila">
+          <label class="mini" for="limite">Límite de giro ±</label>
+          <input type="number" id="limite" min="10" max="180" value="120" data-req>
+          <button id="btnLimite" data-req>Aplicar</button>
+          <button id="btnZero" data-req title="La posición actual pasa a ser 0°">Fijar centro aquí</button>
+        </div>
+        <div class="fila">
+          <label class="mini" for="ganancia" title="Qué fracción del error corrige cada sonido">Ganancia</label>
+          <input type="number" id="ganancia" min="0.1" max="1" step="0.1" value="0.5" data-req>
+          <label class="mini" for="pmax" title="Lo máximo que puede girar por un solo sonido">Giro máx. por sonido</label>
+          <input type="number" id="pmax" min="2" max="90" value="15" data-req>
+          <button id="btnSuave" data-req>Aplicar</button>
+        </div>
+        <div class="fila">
+          <label class="mini" for="vel" title="El 28BYJ-48 pierde pasos por encima de ~15 rpm">Velocidad motor (rpm)</label>
+          <input type="number" id="vel" min="5" max="15" value="12" data-req>
+          <label class="mini" for="pausa" title="Tiempo que ignora sonidos después de girar, para no escuchar su propio motor">Pausa tras girar (ms)</label>
+          <input type="number" id="pausa" min="100" max="2000" step="50" value="500" data-req>
+          <button id="btnVel" data-req>Aplicar</button>
+        </div>
+        <div class="hint">Un aplauso suelto corrige como mucho “giro máx.”. Si llegan sonidos seguidos del mismo lado (voz sostenida) se forma una <b>racha</b>: cada sonido puede girar más (tope × racha) y la ganancia sube 0,25 por sonido.</div>
+      </details>
+
+      <details>
+        <summary>Consola serie</summary>
+        <pre id="consola"></pre>
+        <div class="fila">
+          <input type="text" id="cmd" placeholder="Comando (ej: G-30, J5, X, ?)" data-req>
+          <button id="btnCmd" data-req>Enviar</button>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <section class="card" style="grid-column: 1 / -1">
+    <div class="fila" style="justify-content: space-between; margin: 0">
+      <h2 style="margin:0">Calibración de micrófonos</h2>
+      <button id="btnCal" data-req>Iniciar calibración</button>
+    </div>
+    <div class="hint" id="calActual">Calibración actual: –</div>
+    <div id="calCuerpo" hidden>
+      <div class="pasos">
+        <div class="paso">
+          <h3>1 · Sensibilidad (tornillito)</h3>
+          <p>En <b>silencio</b> las dos barras deben quedar en 0. Si una se mueve sola, girá su tornillo para hacerla menos sensible. Después aplaudí a ~1 m: deben subir <b>las dos</b>.</p>
+          <div class="medidor">IZQ <span class="barra"><i id="barI"></i></span><b id="actI">0 /s</b></div>
+          <div class="medidor">DER <span class="barra"><i id="barD"></i></span><b id="actD">0 /s</b></div>
+          <div class="res" id="resConj">Detección conjunta: aplaudí unas veces…</div>
+          <button id="btnConjReset">Reiniciar conteo</button>
+        </div>
+        <div class="paso">
+          <h3>2 · Centro (offset)</h3>
+          <p>Parate <b>justo enfrente</b> del soporte, a 1–1,5 m, y aplaudí <b>10 veces</b> (de a una, separadas). Corrige que un micrófono se dispare antes que el otro.</p>
+          <button id="btnMedCentro">Medir al frente</button>
+          <div class="res" id="resCentro">–</div>
+          <button id="btnApCentro" disabled>Aplicar offset</button>
+        </div>
+        <div class="paso">
+          <h3>3 · Escala (separación)</h3>
+          <p>Parate <b>de costado</b>, en la misma línea que los dos micrófonos (90°). 10 aplausos del lado izquierdo y 10 del derecho.</p>
+          <div class="fila"><button id="btnMedIzq">Medir izquierda</button><button id="btnMedDer">Medir derecha</button></div>
+          <div class="res" id="resEscala">–</div>
+          <button id="btnApEscala" disabled>Aplicar separación</button>
+        </div>
+        <div class="paso">
+          <h3>4 · Zona muerta y guardar</h3>
+          <p>Se recomienda a partir de cuánto varían las mediciones del paso 2 (3 desvíos). Al final, <b>guardá</b> en la placa para que no se pierda al apagar.</p>
+          <div class="res" id="resZona">Primero hacé el paso 2.</div>
+          <div class="fila">
+            <button id="btnApZona" disabled>Aplicar zona muerta</button>
+            <button class="primario" id="btnGuardar">Guardar en la placa</button>
+            <button id="btnReset">Restablecer</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+// ============ Estado de la app ============
+const st = { esc: false, auto: true, giran: true, pos: 0, deg: 0, lim: 120, sep: 0.2, mov: false, k: 0.5, pmax: 15, vel: 12, pausa: 500,
+             cal: false, off: 0, zona: 60 };
+const sonidos = [];            // { abs, rel, t, src }
+let ultimo = null;
+let enviar = null;             // funcion para mandar comandos (serie real o simulador)
+let modo = null;               // 'serie' | 'sim'
+
+const $ = id => document.getElementById(id);
+const fmt = (v, d = 1) => (v > 0 ? '+' : '') + v.toFixed(d) + '°';
+
+// ============ Mensajes de la placa ============
+function procesarLinea(linea) {
+  linea = linea.trim();
+  if (!linea) return;
+  log(linea);
+  if (!linea.startsWith('@')) return;
+  const sp = linea.indexOf(' ');
+  const tipo = linea.slice(1, sp);
+  let d; try { d = JSON.parse(linea.slice(sp + 1)); } catch { return; }
+  if (tipo === 'STATE') {
+    Object.assign(st, { esc: !!d.esc, auto: !!d.auto, giran: !!d.giran, pos: d.pos, deg: d.deg, lim: d.lim, sep: d.sep, mov: !!d.mov });
+    if (d.k !== undefined) { st.k = d.k; st.pmax = d.pmax; }
+    if (d.vel !== undefined) { st.vel = d.vel; st.pausa = d.pausa; }
+    if (d.cal !== undefined) { st.cal = !!d.cal; st.off = d.off; st.zona = d.zona; }
+  } else if (tipo === 'CNT') {
+    calActividad(d);
+  } else if (tipo === 'SAVED') {
+    mostrarAviso('Calibración guardada en la memoria de la placa.');
+  } else if (tipo === 'POS') {
+    st.pos = d.pos; st.deg = d.deg; st.mov = true;
+  } else if (tipo === 'SND') {
+    ultimo = d;
+    sonidos.push({ abs: d.abs, rel: d.rel, src: d.src, tipo: d.tipo || 'aplauso', t: performance.now() });
+    if (sonidos.length > 12) sonidos.shift();
+    calSonido(d);
+  } else if (tipo === 'LIMIT') {
+    mostrarAviso('Se alcanzó el límite de giro (±' + d.lim + '°). El movimiento se recortó.');
+  } else if (tipo === 'ERR') {
+    mostrarAviso(d.msg);
+  }
+  actualizarUI();
+}
+
+let avisoTimer;
+function mostrarAviso(t) {
+  const a = $('aviso'); a.textContent = t; a.style.display = 'block';
+  clearTimeout(avisoTimer); avisoTimer = setTimeout(() => a.style.display = 'none', 3500);
+}
+
+function log(t) {
+  const c = $('consola');
+  c.textContent += t + '\n';
+  if (c.textContent.length > 20000) c.textContent = c.textContent.slice(-15000);
+  c.scrollTop = c.scrollHeight;
+}
+
+// ============ UI ============
+function actualizarUI() {
+  $('dPos').textContent = fmt(st.deg);
+  $('dEsc').textContent = st.esc ? 'Activa' : 'Inactiva';
+  $('dModo').textContent = st.auto ? 'Automático' : 'Manual';
+  if (ultimo) {
+    $('dAbs').textContent = fmt(ultimo.abs);
+    $('dDt').textContent = ultimo.src === 'ambos' ? ultimo.dt + ' µs' : '— (1 mic)';
+    $('dSrc').textContent = ultimo.src === 'izq' ? 'Izquierdo' : ultimo.src === 'der' ? 'Derecho'
+      : ultimo.dt > 0 ? 'Izquierdo' : ultimo.dt < 0 ? 'Derecho' : 'Ambos';
+  }
+  $('btnEscucha').textContent = 'Escucha: ' + (st.esc ? 'ON' : 'OFF');
+  $('btnEscucha').classList.toggle('on', st.esc);
+  $('btnAuto').classList.toggle('on', st.auto);
+  $('btnManual').classList.toggle('on', !st.auto);
+  $('btnGiran').classList.toggle('on', st.giran);
+  $('btnFijos').classList.toggle('on', !st.giran);
+  $('slider').min = -st.lim; $('slider').max = st.lim;
+  if (document.activeElement !== $('limite')) $('limite').value = st.lim;
+  if (document.activeElement !== $('ganancia')) $('ganancia').value = st.k;
+  if (document.activeElement !== $('pmax')) $('pmax').value = st.pmax;
+  if (document.activeElement !== $('vel')) $('vel').value = st.vel;
+  if (document.activeElement !== $('pausa')) $('pausa').value = st.pausa;
+  $('dVel').textContent = st.vel + ' rpm';
+  if (typeof calUI === 'function') calUI();
+  if (ultimo && ultimo.racha !== undefined) $('dRacha').textContent = ultimo.racha ? '×' + ultimo.racha : '—';
+}
+
+function habilitar(on) { document.querySelectorAll('[data-req]').forEach(e => e.disabled = !on); }
+habilitar(false);
+
+const cmd = c => enviar && enviar(c);
+$('btnEscucha').onclick = () => cmd('L');
+$('btnAuto').onclick = () => cmd('A');
+$('btnManual').onclick = () => cmd('M');
+$('btnCentro').onclick = () => cmd('C');
+$('btnParar').onclick = () => cmd('X');
+$('btnGiran').onclick = () => cmd('R');
+$('btnFijos').onclick = () => cmd('F');
+$('btnZero').onclick = () => cmd('Z');
+$('btnLimite').onclick = () => cmd('T' + $('limite').value);
+$('btnSuave').onclick = () => { cmd('K' + $('ganancia').value); cmd('P' + $('pmax').value); };
+$('btnVel').onclick = () => { cmd('V' + $('vel').value); cmd('W' + $('pausa').value); };
+$('btnIr').onclick = () => cmd('G' + $('slider').value);
+$('slider').oninput = () => $('sliderVal').textContent = $('slider').value + '°';
+document.querySelectorAll('[data-jog]').forEach(b => b.onclick = () => cmd('J' + b.dataset.jog));
+$('btnCmd').onclick = () => { if ($('cmd').value) { cmd($('cmd').value); $('cmd').value = ''; } };
+$('cmd').onkeydown = e => { if (e.key === 'Enter') $('btnCmd').click(); };
+
+// ============ Calibración ============
+const C_SON = 343, N_MUESTRAS = 10;
+const cal = { midiendo: null, m: { centro: [], izq: [], der: [] }, total: 0, ambos: 0,
+              offset: null, sigma: null, sep: null, zona: null };
+
+// Estadística robusta: descarta valores alejados de la mediana (> 3 MAD escalados)
+function robusto(xs) {
+  const ord = [...xs].sort((a, b) => a - b), med = ord[Math.floor(ord.length / 2)];
+  const mad = [...xs].map(x => Math.abs(x - med)).sort((a, b) => a - b)[Math.floor(xs.length / 2)];
+  const umbral = Math.max(3 * 1.4826 * mad, 15);
+  const ok = xs.filter(x => Math.abs(x - med) <= umbral);
+  const media = ok.reduce((s, x) => s + x, 0) / ok.length;
+  const sd = Math.sqrt(ok.reduce((s, x) => s + (x - media) ** 2, 0) / Math.max(1, ok.length - 1));
+  return { media, sd, n: ok.length, desc: xs.length - ok.length };
+}
+const usAGrados = (us, sep) => Math.asin(Math.min(1, C_SON * us * 1e-6 / sep)) * 180 / Math.PI;
+
+function calActividad(d) {         // d.i / d.d = flancos en 250 ms
+  [['I', d.i], ['D', d.d]].forEach(([k, n]) => {
+    const porSeg = n * 4;
+    $('bar' + k).style.width = Math.min(100, Math.log10(1 + porSeg) / Math.log10(2001) * 100) + '%';
+    $('act' + k).textContent = porSeg + ' /s';
+  });
+}
+
+function calSonido(d) {
+  if (!st.cal) return;
+  cal.total++; if (d.src === 'ambos') cal.ambos++;
+  const pct = Math.round(cal.ambos / cal.total * 100);
+  $('resConj').innerHTML = `Detección conjunta: <b>${cal.ambos} de ${cal.total}</b> (${pct}%) — ` +
+    (cal.total < 5 ? 'seguí aplaudiendo…' : pct >= 90 ? '<span class="ok">bien parejos</span>'
+      : `<span class="mal">un mic falla; subí la sensibilidad del ${d.src === 'izq' ? 'DERECHO' : d.src === 'der' ? 'IZQUIERDO' : 'que no reacciona'}</span>`);
+  if (!cal.midiendo) return;
+  if (d.src !== 'ambos') { mostrarAviso('Ese aplauso lo detectó un solo micrófono: no se cuenta.'); return; }
+  const arr = cal.m[cal.midiendo];
+  arr.push(d.raw !== undefined ? d.raw : d.dt);
+  const caja = cal.midiendo === 'centro' ? 'resCentro' : 'resEscala';
+  $(caja).textContent = `Midiendo ${cal.midiendo}: ${arr.length} / ${N_MUESTRAS} aplausos…`;
+  if (arr.length >= N_MUESTRAS) { const que = cal.midiendo; cal.midiendo = null; calTerminar(que); }
+}
+
+function calTerminar(que) {
+  if (que === 'centro') {
+    const r = robusto(cal.m.centro);
+    cal.offset = Math.round(r.media); cal.sigma = r.sd;
+    const grados = usAGrados(Math.abs(r.media - st.off), st.sep);
+    $('resCentro').innerHTML = `Offset medido: <b>${cal.offset} µs</b> (σ = ${r.sd.toFixed(1)} µs, ${r.n} válidas, ${r.desc} descartadas).<br>` +
+      `Sin corregir, el frente se ve corrido ≈ ${grados.toFixed(1)}° hacia la ${r.media - st.off > 0 ? 'izquierda' : 'derecha'}.` +
+      (r.sd > 60 ? '<br><span class="mal">Mucha dispersión: revisá ecos, distancia o sensibilidad y repetí.</span>' : '');
+    $('btnApCentro').disabled = false;
+    const z = Math.max(20, Math.round(3 * r.sd));
+    cal.zona = z;
+    $('resZona').innerHTML = `Recomendado: <b>${z} µs</b> ≈ ±${usAGrados(z, st.sep).toFixed(1)}° (actual: ${st.zona} µs).`;
+    $('btnApZona').disabled = false;
+  } else {
+    const ri = cal.m.izq.length >= N_MUESTRAS ? robusto(cal.m.izq) : null;
+    const rd = cal.m.der.length >= N_MUESTRAS ? robusto(cal.m.der) : null;
+    const off = cal.offset !== null ? cal.offset : st.off;
+    let dEf = null, txt = '';
+    if (ri) txt += `Izquierda: ${ri.media.toFixed(0)} µs (σ ${ri.sd.toFixed(0)}). `;
+    if (rd) txt += `Derecha: ${rd.media.toFixed(0)} µs (σ ${rd.sd.toFixed(0)}). `;
+    if ((ri && ri.media - off < 0) || (rd && rd.media - off > 0)) {
+      $('resEscala').innerHTML = txt + '<br><span class="mal">El signo está al revés: los micrófonos están cruzados (D1↔D2) o los hiciste del lado equivocado.</span>';
+      return;
+    }
+    if (ri && rd) dEf = C_SON * (ri.media - rd.media) / 2 * 1e-6;        // el offset se cancela
+    else if (ri) dEf = C_SON * (ri.media - off) * 1e-6;
+    else if (rd) dEf = C_SON * (off - rd.media) * 1e-6;
+    if (dEf === null) { $('resEscala').textContent = txt; return; }
+    cal.sep = +dEf.toFixed(3);
+    const raro = dEf < 0.12 || dEf > 0.32;
+    $('resEscala').innerHTML = txt + `<br>Separación efectiva: <b>${cal.sep} m</b> (cinta métrica: 0,20 m).` +
+      (!(ri && rd) ? ' Hacé también el otro lado para más precisión.' : '') +
+      (raro ? '<br><span class="mal">Valor raro: ¿estabas realmente a 90°, en línea con los dos mics?</span>' : '');
+    $('btnApEscala').disabled = raro;
+  }
+}
+
+function calMedir(que) {
+  if (!st.cal) return mostrarAviso('Primero tocá “Iniciar calibración”.');
+  cal.m[que] = []; cal.midiendo = que;
+  $(que === 'centro' ? 'resCentro' : 'resEscala').textContent = `Midiendo ${que}: 0 / ${N_MUESTRAS} aplausos…`;
+}
+
+function calUI() {
+  $('btnCal').textContent = st.cal ? 'Terminar calibración' : 'Iniciar calibración';
+  $('btnCal').classList.toggle('on', st.cal);
+  $('calCuerpo').hidden = !st.cal;
+  $('calActual').textContent = `Calibración actual en la placa: offset ${st.off} µs · separación ${(+st.sep).toFixed(3)} m · zona muerta ${st.zona} µs` +
+    (st.cal ? ' — en calibración el motor NO se mueve.' : '');
+}
+
+$('btnCal').onclick = () => { cal.midiendo = null; cmd(st.cal ? 'Q0' : 'Q1'); };
+$('btnConjReset').onclick = () => { cal.total = 0; cal.ambos = 0; $('resConj').textContent = 'Detección conjunta: aplaudí unas veces…'; };
+$('btnMedCentro').onclick = () => calMedir('centro');
+$('btnMedIzq').onclick = () => calMedir('izq');
+$('btnMedDer').onclick = () => calMedir('der');
+$('btnApCentro').onclick = () => { cmd('O' + cal.offset); mostrarAviso('Offset aplicado. Falta “Guardar en la placa”.'); };
+$('btnApEscala').onclick = () => { cmd('D' + cal.sep); mostrarAviso('Separación aplicada. Falta “Guardar en la placa”.'); };
+$('btnApZona').onclick = () => { cmd('Y' + cal.zona); mostrarAviso('Zona muerta aplicada. Falta “Guardar en la placa”.'); };
+$('btnGuardar').onclick = () => cmd('S');
+$('btnReset').onclick = () => { if (confirm('¿Volver a los valores de fábrica? (después tocá Guardar)')) cmd('B'); };
+
+// ============ Conexión serie real (Web Serial) ============
+$('btnConectar').onclick = async () => {
+  if (!('serial' in navigator)) {
+    alert('Este navegador no soporta Web Serial. Abrí la app con Google Chrome o Microsoft Edge en una computadora.');
+    return;
+  }
+  try {
+    const port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 115200 });
+    detenerSim();
+    modo = 'serie';
+    const enc = new TextEncoder();
+    const writer = port.writable.getWriter();
+    enviar = c => { log('> ' + c); writer.write(enc.encode(c + '\n')); };
+    $('estadoCon').innerHTML = '<b>Conectado</b> por USB';
+    habilitar(true);
+    setTimeout(() => cmd('?'), 300);
+    const reader = port.readable.pipeThrough(new TextDecoderStream()).getReader();
+    let buf = '';
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += value;
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) { procesarLinea(buf.slice(0, i)); buf = buf.slice(i + 1); }
+    }
+  } catch (e) {
+    if (e.name !== 'NotFoundError') { log('Error: ' + e.message); mostrarAviso('Se perdió la conexión: ' + e.message); }
+    if (modo === 'serie') { $('estadoCon').textContent = 'Sin conexión'; habilitar(false); enviar = null; modo = null; }
+  }
+};
+
+// ============ Simulador (para probar la app sin la placa) ============
+let simTimer = null, simCntTimer = null;
+const sim = { esc: true, auto: true, giran: true, pos: 0, lim: 120, dest: null, ignorar: 0, k: 0.5, pmax: 15,
+              vel: 12, pausa: 500, racha: 0, lado: 0, ultimo: 0,
+              cal: false, off: 0, sep: 0.20, zona: 60, rafaga: { i: 0, d: 0 } };
+// "Realidad" del simulador: el mic izquierdo es más sensible (se dispara 45 µs antes)
+// y la separación real quedó en 0,214 m. La calibración debería descubrir ambos valores.
+const SIM_SESGO_US = 45, SIM_SEP_REAL = 0.214;
+const PPV = 2048, p2g = p => p * 360 / PPV, g2p = g => Math.round(g / 360 * PPV);
+function simEstado() {
+  procesarLinea(`@STATE {"esc":${+sim.esc},"auto":${+sim.auto},"giran":${+sim.giran},"pos":${sim.pos},"deg":${p2g(sim.pos).toFixed(1)},"lim":${sim.lim},"sep":${sim.sep},"mov":${+(sim.dest !== null)},"ir":0,"k":${sim.k},"pmax":${sim.pmax},"vel":${sim.vel},"pausa":${sim.pausa},"cal":${+sim.cal},"off":${sim.off},"zona":${sim.zona}}`);
+}
+function simMover(n) {
+  const L = g2p(sim.lim);
+  let d = sim.pos + n;
+  if (d > L || d < -L) { d = Math.max(-L, Math.min(L, d)); procesarLinea(`@LIMIT {"lim":${sim.lim}}`); }
+  if (d !== sim.pos) { sim.dest = d; procesarLinea(`@MOVE {"from":${p2g(sim.pos).toFixed(1)},"to":${p2g(d).toFixed(1)}}`); }
+}
+function simCmd(c) {
+  log('> ' + c);
+  const k = c[0].toUpperCase(), v = parseFloat(c.slice(1));
+  if (k === 'X') { if (sim.dest !== null) { sim.dest = null; procesarLinea('Movimiento DETENIDO'); simEstado(); } return; }
+  if (k === '?') return simEstado();
+  if (sim.dest !== null) return procesarLinea('@ERR {"msg":"ocupado moviendo"}');
+  switch (k) {
+    case 'L': sim.esc = c[1] === '1' ? true : c[1] === '0' ? false : !sim.esc; procesarLinea(sim.esc ? 'Escucha ACTIVADA' : 'Escucha DESACTIVADA'); break;
+    case 'A': sim.auto = true; break;
+    case 'M': sim.auto = false; break;
+    case 'G': simMover(g2p(v) - sim.pos); break;
+    case 'J': simMover(g2p(v)); break;
+    case 'C': simMover(-sim.pos); break;
+    case 'Z': sim.pos = 0; break;
+    case 'R': sim.giran = true; break;
+    case 'F': sim.giran = false; break;
+    case 'T': sim.lim = Math.max(10, Math.min(180, v || 120)); break;
+    case 'K': sim.k = Math.max(0.1, Math.min(1, v || 0.5)); break;
+    case 'P': sim.pmax = Math.max(2, Math.min(90, v || 15)); break;
+    case 'V': sim.vel = Math.max(5, Math.min(15, Math.round(v) || 12)); break;
+    case 'W': sim.pausa = Math.max(100, Math.min(2000, v || 500)); break;
+    case 'Q': sim.cal = c[1] === '1'; if (sim.cal) sim.esc = true; break;
+    case 'O': sim.off = Math.max(-400, Math.min(400, Math.round(v) || 0)); break;
+    case 'D': sim.sep = Math.max(0.05, Math.min(1, v || 0.2)); break;
+    case 'Y': sim.zona = Math.max(10, Math.min(300, Math.round(v) || 60)); break;
+    case 'S': try { localStorage.setItem('simCal', JSON.stringify({ off: sim.off, sep: sim.sep, zona: sim.zona })); } catch {}
+              procesarLinea('@SAVED {}'); return;
+    case 'B': sim.off = 0; sim.sep = 0.20; sim.zona = 60; break;
+  }
+  simEstado();
+}
+// absReal: angulo real de la fuente en el mundo. tipo: 'aplauso' | 'voz'
+// Imita al firmware: mientras el motor gira o durante la pausa de 800 ms el sonido se ignora.
+function simSonido(absReal, tipo) {
+  if (!sim.esc) { mostrarAviso('La escucha está desactivada: tocá “Escucha: OFF” para activarla.'); return; }
+  if (sim.dest !== null || performance.now() < sim.ignorar) return;
+  const voz = tipo === 'voz';
+  if (voz && Math.random() < 0.35) return;                    // la voz no siempre supera el umbral
+  const posDeg = p2g(sim.pos);
+  let rel = sim.giran ? absReal - posDeg : absReal;           // lo que "ven" los mics
+  rel = ((rel + 540) % 360) - 180;
+  if (Math.abs(rel) > 90) rel = Math.sign(rel) * (180 - Math.abs(rel)); // ambigüedad frente/atrás
+  let dt = 0, raw = 0, r, src = 'ambos';
+  sim.rafaga.i += voz ? 25 : 60; sim.rafaga.d += voz ? 20 : 50;   // actividad para el medidor
+  if (voz && Math.random() < 0.15) {                           // a veces dispara un solo mic
+    src = rel >= 0 ? 'izq' : 'der'; r = rel >= 0 ? 45 : -45;
+    procesarLinea(`Solo reacciono el micrófono ${src === 'izq' ? 'izquierdo' : 'derecho'} -> ${r.toFixed(1)} grados`);
+  } else {
+    const ruido = voz ? 90 : 20;                               // la voz tiene flancos menos nítidos
+    raw = Math.round(Math.sin(rel * Math.PI / 180) * SIM_SEP_REAL / 343 * 1e6 + SIM_SESGO_US + (Math.random() - .5) * ruido);
+    if (!voz && Math.random() < 0.08) raw += Math.round((Math.random() - .5) * 400);   // eco ocasional
+    dt = raw - sim.off;
+    r = Math.abs(dt) < sim.zona ? 0 : Math.asin(Math.max(-1, Math.min(1, 343 * dt * 1e-6 / sim.sep))) * 180 / Math.PI;
+    procesarLinea(Math.abs(dt) < sim.zona ? 'Sonido al frente' : `dt = ${dt} us -> angulo = ${r.toFixed(1)} grados`);
+  }
+  const abs = sim.giran ? posDeg + r : r;
+  const corr = abs - posDeg;
+  // racha (igual que el firmware): sonidos seguidos del mismo lado
+  const ahora = performance.now();
+  const lado = Math.abs(corr) < 6 ? 0 : Math.sign(corr);
+  sim.racha = (lado && lado === sim.lado && ahora - sim.ultimo < 2000) ? Math.min(sim.racha + 1, 4) : (lado ? 1 : 0);
+  sim.lado = lado;
+  procesarLinea(`@SND {"dt":${dt},"raw":${raw},"rel":${r.toFixed(1)},"abs":${abs.toFixed(1)},"src":"${src}","pos":${posDeg.toFixed(1)},"auto":${+sim.auto},"racha":${sim.racha},"tipo":"${tipo}"}`);
+  if (sim.cal) sim.ignorar = ahora + 300;                      // calibrando: no mover
+  else if (sim.auto && lado) {
+    const k = Math.min(1, sim.k + 0.25 * (sim.racha - 1)), tope = sim.pmax * sim.racha;
+    simMover(g2p(Math.max(-tope, Math.min(tope, corr * k))));
+  } else sim.ignorar = ahora + sim.pausa;
+  sim.ultimo = ahora;
+}
+function iniciarSim() {
+  modo = 'sim'; enviar = simCmd;
+  $('estadoCon').innerHTML = '<b>Simulación</b> — clic en el mapa = aplauso · mantener apretado = alguien hablando';
+  try { Object.assign(sim, JSON.parse(localStorage.getItem('simCal')) || {}); } catch {}
+  habilitar(true); simEstado();
+  clearInterval(simCntTimer);
+  simCntTimer = setInterval(() => {   // medidor de actividad: el mic izq. (más sensible) "ve" algo de ruido
+    if (!sim.cal) return;
+    const ruidoI = Math.random() < 0.3 ? Math.ceil(Math.random() * 3) : 0;
+    procesarLinea(`@CNT {"i":${sim.rafaga.i + ruidoI},"d":${sim.rafaga.d}}`);
+    sim.rafaga.i = 0; sim.rafaga.d = 0;
+  }, 250);
+  simTimer = setInterval(() => {      // pasos cada 50 ms = rpm × 2048 / 60 × 0,05
+    if (sim.dest === null) return;
+    const porTick = Math.round(sim.vel * PPV / 60 * 0.05);
+    const paso = Math.sign(sim.dest - sim.pos) * Math.min(porTick, Math.abs(sim.dest - sim.pos));
+    sim.pos += paso;
+    procesarLinea(`@POS {"pos":${sim.pos},"deg":${p2g(sim.pos).toFixed(1)}}`);
+    if (sim.pos === sim.dest) {
+      sim.dest = null; sim.ignorar = performance.now() + sim.pausa;
+      sim.ultimo = performance.now();   // la ventana de racha se mide desde el fin del giro
+      simEstado();
+    }
+  }, 50);
+}
+function detenerSim() { clearInterval(simTimer); simTimer = null; }
+$('btnSim').onclick = () => { if (modo !== 'serie') { detenerSim(); iniciarSim(); } };
+
+// ============ Dibujo del mapa ============
+const cv = $('mapa'), ctx = cv.getContext('2d');
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+// angulo del soporte (grados, + = izquierda, 0 = arriba) -> radianes de canvas
+const rad = g => (-90 - g) * Math.PI / 180;
+
+// --- Interacción en simulación: clic corto = aplauso, mantener = voz ---
+const puntero = { activo: false, voz: false, x: 0, y: 0, timerHold: null, timerVoz: null, t0: 0 };
+function ubicar(e) {
+  const r = cv.getBoundingClientRect();
+  puntero.x = (e.clientX - r.left) * cv.width / r.width;
+  puntero.y = (e.clientY - r.top) * cv.height / r.height;
+}
+function anguloPuntero() {
+  const x = puntero.x - cv.width / 2, y = puntero.y - cv.height * 0.62;
+  const g = -Math.atan2(y, x) * 180 / Math.PI - 90;   // inverso de rad()
+  return ((g + 540) % 360) - 180;
+}
+function soltar(disparaAplauso) {
+  if (!puntero.activo) return;
+  clearTimeout(puntero.timerHold); clearInterval(puntero.timerVoz);
+  if (disparaAplauso && !puntero.voz) { puntero.t0 = performance.now(); simSonido(anguloPuntero(), 'aplauso'); }
+  puntero.activo = false; puntero.voz = false;
+}
+cv.addEventListener('pointerdown', e => {
+  if (modo !== 'sim') { if (!modo) mostrarAviso('Tocá “Modo simulación” (o conectá la placa) para probar.'); return; }
+  e.preventDefault(); cv.setPointerCapture(e.pointerId);
+  ubicar(e); puntero.activo = true; puntero.voz = false;
+  puntero.timerHold = setTimeout(() => {                 // pasados 250 ms: está "hablando"
+    puntero.voz = true; puntero.t0 = performance.now();
+    simSonido(anguloPuntero(), 'voz');
+    puntero.timerVoz = setInterval(() => simSonido(anguloPuntero(), 'voz'), 250);
+  }, 250);
+});
+cv.addEventListener('pointermove', e => { if (puntero.activo) ubicar(e); });
+cv.addEventListener('pointerup', () => soltar(true));
+cv.addEventListener('pointercancel', () => soltar(false));
+cv.style.touchAction = 'none';
+
+function dibujar() {
+  const W = cv.width, H = cv.height, cx = W / 2, cy = H * 0.62, R = Math.min(W * 0.45, H * 0.56);
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = css('--panel'); ctx.fillRect(0, 0, W, H);
+
+  // zona fuera de limite
+  ctx.fillStyle = css('--limit');
+  ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, R, rad(-st.lim), rad(st.lim) + 2 * Math.PI, false); ctx.closePath(); ctx.fill();
+
+  // grilla polar
+  ctx.strokeStyle = css('--grid'); ctx.lineWidth = 1.5;
+  for (let k = 1; k <= 3; k++) { ctx.beginPath(); ctx.arc(cx, cy, R * k / 3, 0, 2 * Math.PI); ctx.stroke(); }
+  ctx.fillStyle = css('--muted'); ctx.font = '22px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (let g = -150; g <= 180; g += 30) {
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + R * Math.cos(rad(g)), cy + R * Math.sin(rad(g))); ctx.stroke();
+    const tx = cx + (R + 26) * Math.cos(rad(g)), ty = cy + (R + 26) * Math.sin(rad(g));
+    if (ty > 12 && ty < H - 12) ctx.fillText((g > 0 ? '+' : '') + g + '°', tx, ty);
+  }
+  ctx.fillText('FRENTE', cx, Math.max(16, cy - R - 26 - 24));
+
+  // sonidos (estela que se desvanece)
+  const ahora = performance.now();
+  sonidos.forEach((s, i) => {
+    const edad = (ahora - s.t) / 8000, alfa = Math.max(0, 1 - edad);
+    if (alfa <= 0) return;
+    const esUltimo = i === sonidos.length - 1;
+    ctx.globalAlpha = alfa * (esUltimo ? 1 : 0.45);
+    const col = css(s.tipo === 'voz' ? '--voz' : '--snd');
+    ctx.strokeStyle = col; ctx.lineWidth = esUltimo ? 4 : 2; ctx.setLineDash(esUltimo ? [] : [8, 8]);
+    const a = rad(s.abs);
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + R * Math.cos(a), cy + R * Math.sin(a)); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.arc(cx + R * 0.92 * Math.cos(a), cy + R * 0.92 * Math.sin(a), esUltimo ? 14 : 8, 0, 2 * Math.PI); ctx.fill();
+    // pulso del ultimo sonido
+    if (esUltimo && edad < 0.15) {
+      ctx.globalAlpha = 1 - edad / 0.15; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(cx + R * 0.92 * Math.cos(a), cy + R * 0.92 * Math.sin(a), 14 + edad * 300, 0, 2 * Math.PI); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  });
+
+  // barra de microfonos: gira con el soporte o queda fija en 0
+  const angMics = st.giran ? st.deg : 0;
+  const escala = (R / 3) / 0.20;              // 0,20 m ocupa un anillo de la grilla
+  const semi = st.sep / 2 * escala;
+  const ax = Math.cos(rad(angMics) + Math.PI / 2), ay = Math.sin(rad(angMics) + Math.PI / 2); // eje lateral (hacia la izquierda)
+  ctx.strokeStyle = css('--muted'); ctx.lineWidth = 6; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(cx - ax * semi, cy - ay * semi); ctx.lineTo(cx + ax * semi, cy + ay * semi); ctx.stroke();
+  [[1, 'I'], [-1, 'D']].forEach(([sgn, txt]) => {
+    const mx = cx - sgn * ax * semi, my = cy - sgn * ay * semi;
+    const disparo = ultimo && (ahora - sonidos[sonidos.length - 1]?.t) < 600 &&
+      ((txt === 'I' && (ultimo.src === 'izq' || ultimo.dt > 0)) || (txt === 'D' && (ultimo.src === 'der' || ultimo.dt < 0)));
+    ctx.fillStyle = disparo ? css('--snd') : css('--mic');
+    ctx.beginPath(); ctx.arc(mx, my, 20, 0, 2 * Math.PI); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 20px system-ui'; ctx.fillText(txt, mx, my + 1);
+  });
+
+  // camara / telefono: siempre apunta hacia donde mira el soporte
+  const ca = rad(st.deg);
+  ctx.strokeStyle = css('--accent'); ctx.fillStyle = css('--accent'); ctx.lineWidth = 5;
+  const L = R * 0.55, ex = cx + L * Math.cos(ca), ey = cy + L * Math.sin(ca);
+  ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(ex, ey); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(ex + 22 * Math.cos(ca), ey + 22 * Math.sin(ca));
+  ctx.lineTo(ex + 14 * Math.cos(ca + 2.2), ey + 14 * Math.sin(ca + 2.2));
+  ctx.lineTo(ex + 14 * Math.cos(ca - 2.2), ey + 14 * Math.sin(ca - 2.2)); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx, cy, 10, 0, 2 * Math.PI); ctx.fill();
+
+  // leyenda
+  ctx.textAlign = 'left'; ctx.font = '20px system-ui';
+  // fuente simulada (donde está el cursor): ondas violetas mientras "habla", destello al aplaudir
+  if (modo === 'sim' && (puntero.activo || ahora - puntero.t0 < 500)) {
+    const px = puntero.x, py = puntero.y, vozActiva = puntero.activo && puntero.voz;
+    const col = css(vozActiva ? '--voz' : '--snd');
+    ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(px, py, 9, 0, 2 * Math.PI); ctx.fill();
+    if (vozActiva) {
+      for (let k = 0; k < 3; k++) {
+        const f = ((ahora / 900) + k / 3) % 1;
+        ctx.globalAlpha = 1 - f;
+        ctx.beginPath(); ctx.arc(px, py, 12 + f * 40, 0, 2 * Math.PI); ctx.stroke();
+      }
+      ctx.globalAlpha = 1; ctx.textAlign = 'center'; ctx.font = 'bold 20px system-ui';
+      ctx.fillText('hablando…', px, py - 62);
+    } else if (!puntero.activo) {
+      const f = (ahora - puntero.t0) / 500;
+      ctx.globalAlpha = 1 - f;
+      for (let k = 0; k < 8; k++) {
+        const an = k * Math.PI / 4, r1 = 14 + f * 10, r2 = 26 + f * 26;
+        ctx.beginPath(); ctx.moveTo(px + r1 * Math.cos(an), py + r1 * Math.sin(an)); ctx.lineTo(px + r2 * Math.cos(an), py + r2 * Math.sin(an)); ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  ctx.textAlign = 'left'; ctx.font = '20px system-ui';
+  const leyenda = [[css('--accent'), 'Cámara (orientación)'], [css('--mic'), 'Micrófonos ' + (st.giran ? '(giran)' : '(fijos)')], [css('--snd'), 'Aplauso / sonido detectado'], [css('--voz'), 'Voz (simulación)']];
+  leyenda.forEach(([c, t], i) => { ctx.fillStyle = c; ctx.fillRect(16, H - 30 - i * 30, 18, 18); ctx.fillStyle = css('--ink'); ctx.fillText(t, 42, H - 21 - i * 30); });
+  if (st.mov) { ctx.fillStyle = css('--accent'); ctx.textAlign = 'right'; ctx.fillText('Girando…', W - 16, H - 21); }
+
+  requestAnimationFrame(dibujar);
+}
+actualizarUI();
+dibujar();
+</script>
+</body>
+</html>
