@@ -20,11 +20,19 @@
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink);
          font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
-           padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
-  h1 { font-size: 18px; margin: 0; }
-  .estado-con { font-size: 13px; color: var(--muted); }
-  .estado-con b { color: var(--ink); }
+  header { border-bottom: 1px solid var(--line); background: var(--panel); }
+  .cabecera { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between;
+              max-width: 1200px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 20px; margin: 0; }
+  .estado-con { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; }
+  .estado-con::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .estado-con[data-estado="usb"]::before { background: var(--mic); }
+  .estado-con[data-estado="espera"]::before { background: var(--snd); }
+  .estado-con[data-estado="error"]::before { background: var(--danger); }
+  .estado-con[data-estado="sim"]::before { background: var(--voz); }
+  .ayuda-con { max-width: 68ch; margin: 3px 0 0; color: var(--muted); font-size: 13px; }
+  @media (max-width: 520px) { .cabecera .fila, .cabecera button { flex: 1 1 auto; } }
+  button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   main { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr); gap: 16px;
          padding: 16px; max-width: 1200px; margin: 0 auto; }
   @media (max-width: 820px) { main { grid-template-columns: 1fr; } }
@@ -33,6 +41,9 @@
   canvas { width: 100%; aspect-ratio: 1.6 / 1; display: block; border-radius: 8px; }
   .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
   .datos { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .telemetria { margin-bottom: 10px; overflow-wrap: anywhere; }
+  .telemetria .estado-con { margin-bottom: 2px; }
+  .datos[data-vencidos="true"] .dato b { color: var(--muted); }
   .dato { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
   .dato span { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
   .dato b { font-size: 20px; font-variant-numeric: tabular-nums; }
@@ -70,11 +81,18 @@
 </head>
 <body>
 <header>
-  <h1>Seguidor de Sonido</h1>
-  <div class="fila" style="margin:0">
-    <span class="estado-con" id="estadoCon">Sin conexión</span>
-    <button class="primario" id="btnConectar">Conectar placa (USB)</button>
-    <button id="btnSim">Modo simulación</button>
+  <div class="cabecera">
+    <div>
+      <h1>Seguidor de Sonido</h1>
+      <div role="status" aria-atomic="true">
+        <div class="estado-con" id="estadoCon">Sin conexión</div>
+        <p class="ayuda-con" id="ayudaCon">Conectá la NodeMCU y elegí el puerto CP2102 / USB Serial.</p>
+      </div>
+    </div>
+    <div class="fila" style="margin:0">
+      <button class="primario" id="btnConectar">Conectar placa (USB)</button>
+      <button id="btnSim">Modo simulación</button>
+    </div>
   </div>
 </header>
 
@@ -89,7 +107,11 @@
   <section>
     <div class="card" style="margin-bottom:16px">
       <h2>Datos en vivo</h2>
-      <div class="datos">
+      <div class="telemetria">
+        <div class="estado-con" id="estadoDatos" role="status">Sin datos de la placa</div>
+        <div class="hint" id="detalleDatos"></div>
+      </div>
+      <div class="datos" id="datos">
         <div class="dato"><span>Orientación</span><b id="dPos">–</b></div>
         <div class="dato"><span>Último sonido</span><b id="dAbs">–</b></div>
         <div class="dato"><span>Δt entre mics</span><b id="dDt">–</b></div>
@@ -215,10 +237,11 @@
 
 <script>
 // ============ Estado de la app ============
-const st = { esc: false, auto: true, giran: true, pos: 0, deg: 0, lim: 120, sep: 0.2, mov: false, k: 0.5, pmax: 15, vel: 12, pausa: 500,
-             cal: false, off: 0, zona: 60 };
+const estadoInicial = { esc: false, auto: true, giran: true, pos: 0, deg: 0, lim: 120, sep: 0.2, mov: false,
+                        k: 0.5, pmax: 15, vel: 12, pausa: 500, cal: false, off: 0, zona: 60 };
+const st = { ...estadoInicial };
 const sonidos = [];            // { abs, rel, t, src }
-let ultimo = null;
+let ultimo = null, ultimoSonidoEn = null;
 let enviar = null;             // funcion para mandar comandos (serie real o simulador)
 let modo = null;               // 'serie' | 'sim'
 
@@ -226,19 +249,32 @@ const $ = id => document.getElementById(id);
 const fmt = (v, d = 1) => (v > 0 ? '+' : '') + v.toFixed(d) + '°';
 
 // ============ Mensajes de la placa ============
-function procesarLinea(linea) {
+function procesarLinea(linea, sesion = null) {
   linea = linea.trim();
   if (!linea) return;
   log(linea);
+  if (sesion && !sesion.lista) {
+    // Algunos sketches de prueba sólo envían lecturas de ambos micrófonos como texto.
+    const prueba = /^IZQ:\s*([+-]?\d+)\s+DER:\s*([+-]?\d+)$/i.exec(linea);
+    if (prueba) {
+      sesion.prueba = { izq: prueba[1], der: prueba[2], t: performance.now(), n: (sesion.prueba?.n ?? 0) + 1 };
+      actualizarTelemetria();
+    }
+  }
   if (!linea.startsWith('@')) return;
   const sp = linea.indexOf(' ');
   const tipo = linea.slice(1, sp);
   let d; try { d = JSON.parse(linea.slice(sp + 1)); } catch { return; }
+  if (!d || typeof d !== 'object') return;
+  if (sesion && !sesion.lista && tipo !== 'STATE') return;
+  if (tipo === 'POS' && !['pos', 'deg'].every(k => Number.isFinite(d[k]))) return;
   if (tipo === 'STATE') {
+    if (!['pos', 'deg', 'lim', 'sep'].every(k => Number.isFinite(d[k]))) return;
     Object.assign(st, { esc: !!d.esc, auto: !!d.auto, giran: !!d.giran, pos: d.pos, deg: d.deg, lim: d.lim, sep: d.sep, mov: !!d.mov });
     if (d.k !== undefined) { st.k = d.k; st.pmax = d.pmax; }
     if (d.vel !== undefined) { st.vel = d.vel; st.pausa = d.pausa; }
     if (d.cal !== undefined) { st.cal = !!d.cal; st.off = d.off; st.zona = d.zona; }
+    if (sesion && !sesion.lista) confirmarSerie(sesion);
   } else if (tipo === 'CNT') {
     calActividad(d);
   } else if (tipo === 'SAVED') {
@@ -247,7 +283,8 @@ function procesarLinea(linea) {
     st.pos = d.pos; st.deg = d.deg; st.mov = true;
   } else if (tipo === 'SND') {
     ultimo = d;
-    sonidos.push({ abs: d.abs, rel: d.rel, src: d.src, tipo: d.tipo || 'aplauso', t: performance.now() });
+    ultimoSonidoEn = performance.now();
+    sonidos.push({ abs: d.abs, rel: d.rel, src: d.src, tipo: d.tipo || 'aplauso', t: ultimoSonidoEn });
     if (sonidos.length > 12) sonidos.shift();
     calSonido(d);
   } else if (tipo === 'LIMIT') {
@@ -255,7 +292,12 @@ function procesarLinea(linea) {
   } else if (tipo === 'ERR') {
     mostrarAviso(d.msg);
   }
+  if (sesion && (tipo === 'STATE' || tipo === 'POS')) {
+    sesion.ultimaLectura = performance.now();
+    sesion.lecturas++;
+  }
   actualizarUI();
+  actualizarTelemetria();
 }
 
 let avisoTimer;
@@ -273,6 +315,15 @@ function log(t) {
 
 // ============ UI ============
 function actualizarUI() {
+  if (!enviar) {
+    for (const id of ['dPos', 'dEsc', 'dModo', 'dAbs', 'dDt', 'dSrc', 'dRacha', 'dVel']) $(id).textContent = '–';
+    $('btnEscucha').textContent = 'Escucha: –';
+    for (const id of ['btnEscucha', 'btnAuto', 'btnManual', 'btnGiran', 'btnFijos', 'btnCal']) $(id).classList.remove('on');
+    $('btnCal').textContent = 'Iniciar calibración';
+    $('calCuerpo').hidden = true;
+    $('calActual').textContent = 'Calibración actual: –';
+    return;
+  }
   $('dPos').textContent = fmt(st.deg);
   $('dEsc').textContent = st.esc ? 'Activa' : 'Inactiva';
   $('dModo').textContent = st.auto ? 'Automático' : 'Manual';
@@ -281,6 +332,8 @@ function actualizarUI() {
     $('dDt').textContent = ultimo.src === 'ambos' ? ultimo.dt + ' µs' : '— (1 mic)';
     $('dSrc').textContent = ultimo.src === 'izq' ? 'Izquierdo' : ultimo.src === 'der' ? 'Derecho'
       : ultimo.dt > 0 ? 'Izquierdo' : ultimo.dt < 0 ? 'Derecho' : 'Ambos';
+  } else {
+    for (const id of ['dAbs', 'dDt', 'dSrc']) $(id).textContent = '–';
   }
   $('btnEscucha').textContent = 'Escucha: ' + (st.esc ? 'ON' : 'OFF');
   $('btnEscucha').classList.toggle('on', st.esc);
@@ -296,7 +349,7 @@ function actualizarUI() {
   if (document.activeElement !== $('pausa')) $('pausa').value = st.pausa;
   $('dVel').textContent = st.vel + ' rpm';
   if (typeof calUI === 'function') calUI();
-  if (ultimo && ultimo.racha !== undefined) $('dRacha').textContent = ultimo.racha ? '×' + ultimo.racha : '—';
+  $('dRacha').textContent = ultimo?.racha ? '×' + ultimo.racha : '–';
 }
 
 function habilitar(on) { document.querySelectorAll('[data-req]').forEach(e => e.disabled = !on); }
@@ -424,34 +477,211 @@ $('btnGuardar').onclick = () => cmd('S');
 $('btnReset').onclick = () => { if (confirm('¿Volver a los valores de fábrica? (después tocá Guardar)')) cmd('B'); };
 
 // ============ Conexión serie real (Web Serial) ============
+let conexion = null;
+let abriendoPuerto = false;
+const ESTADO_VENCE_MS = 4000;
+const PUERTO_CP2102 = { usbVendorId: 0x10c4, usbProductId: 0xea60 };
+
+function actualizarTelemetria() {
+  const ahora = performance.now();
+  const segundos = t => Math.floor((ahora - t) / 1000) + ' s';
+  const sesion = conexion;
+  const real = sesion?.lista && !sesion.cerrando;
+  const vencido = real && ahora - sesion.ultimaLectura >= ESTADO_VENCE_MS;
+  let estado = '', titulo = 'Sin datos de la placa', detalle = '';
+  if (modo === 'sim') {
+    estado = 'sim'; titulo = 'Datos simulados';
+    detalle = 'No provienen del USB.';
+  } else if (real) {
+    estado = vencido ? 'error' : 'usb';
+    titulo = vencido ? 'Datos desactualizados' : 'En vivo · USB';
+    detalle = `Última lectura hace ${segundos(sesion.ultimaLectura)} · ${sesion.lecturas} recibidas`;
+    if (vencido) detalle += ' · se muestran los últimos valores conocidos';
+    else detalle += ultimoSonidoEn === null ? ' · sin sonidos recibidos' : ` · último sonido hace ${segundos(ultimoSonidoEn)}`;
+  } else if (sesion && !sesion.cerrando && sesion.prueba) {
+    const { izq, der, t, n } = sesion.prueba;
+    const activa = ahora - t < ESTADO_VENCE_MS;
+    estado = activa ? 'usb' : 'error';
+    titulo = activa ? 'En vivo · Lectura USB sin control' : 'Lecturas USB desactualizadas';
+    detalle = `IZQ: ${izq} · DER: ${der} · hace ${segundos(t)} · ${n} lecturas`;
+    estadoConexion(activa ? 'espera' : 'error', 'Puerto USB conectado · solo lectura',
+      'La placa envía lecturas de prueba. Para habilitar los controles, cargá seguidor_app.ino.');
+  } else if (sesion && !sesion.cerrando) {
+    estado = sesion.sinRespuesta ? 'error' : 'espera';
+    titulo = sesion.sinRespuesta
+      ? (sesion.bytesRecibidos ? 'Datos recibidos, firmware sin confirmar' : 'Chrome no recibió datos de la placa')
+      : 'Esperando datos de la placa';
+    detalle = `${sesion.bytesRecibidos} bytes recibidos por USB`;
+    if (sesion.sinRespuesta) estadoConexion('error', 'Puerto abierto, firmware sin confirmar',
+      sesion.bytesRecibidos ? 'Revisá las líneas recibidas en la Consola serie.'
+        : 'Pulsá RST con el puerto abierto. Si sigue en 0 bytes, probá conectar la placa sin el hub.');
+  }
+  const indicador = $('estadoDatos');
+  indicador.dataset.estado = estado;
+  if (indicador.textContent !== titulo) indicador.textContent = titulo;
+  if ($('detalleDatos').textContent !== detalle) $('detalleDatos').textContent = detalle;
+  $('datos').dataset.vencidos = String(!!vencido);
+}
+
+function estadoConexion(estado, titulo, ayuda) {
+  $('estadoCon').dataset.estado = estado;
+  if ($('estadoCon').textContent !== titulo) $('estadoCon').textContent = titulo;
+  if ($('ayudaCon').textContent !== ayuda) $('ayudaCon').textContent = ayuda;
+}
+
+function actualizarBotonesConexion() {
+  $('btnConectar').textContent = conexion ? 'Desconectar USB' : 'Conectar placa (USB)';
+  $('btnConectar').disabled = abriendoPuerto || !!conexion?.cerrando;
+  $('btnSim').disabled = abriendoPuerto || !!conexion;
+  $('btnSim').textContent = modo === 'sim' ? 'Salir de simulación' : 'Modo simulación';
+}
+
+function limpiarSesion() {
+  Object.assign(st, estadoInicial);
+  ultimo = null;
+  ultimoSonidoEn = null;
+  sonidos.length = 0;
+  Object.assign(cal, { midiendo: null, m: { centro: [], izq: [], der: [] }, offset: null, sigma: null, sep: null, zona: null });
+  $('btnConjReset').click();
+  calActividad({ i: 0, d: 0 });
+  $('resCentro').textContent = $('resEscala').textContent = '–';
+  $('resZona').textContent = 'Primero hacé el paso 2.';
+  for (const id of ['btnApCentro', 'btnApEscala', 'btnApZona']) $(id).disabled = true;
+  $('slider').value = 0;
+  $('cmd').value = '';
+  $('slider').oninput();
+  clearTimeout(avisoTimer);
+  $('aviso').style.display = 'none';
+  actualizarUI();
+  actualizarTelemetria();
+}
+
+function confirmarSerie(sesion) {
+  if (conexion !== sesion || sesion.cerrando) return;
+  sesion.lista = true;
+  clearInterval(sesion.sondeo);
+  clearTimeout(sesion.espera);
+  modo = 'serie';
+  enviar = c => escribirSerie(sesion, c);
+  estadoConexion('usb', 'Placa conectada', 'Firmware confirmado · USB a 115200 baudios.');
+  habilitar(true);
+}
+
+async function cerrarSerie(sesion, error = null) {
+  if (sesion.cerrando) return;
+  sesion.cerrando = true;
+  clearInterval(sesion.sondeo);
+  clearTimeout(sesion.espera);
+  modo = null;
+  enviar = null;
+  habilitar(false);
+  limpiarSesion();
+  actualizarBotonesConexion();
+  if (error) log('Error de USB: ' + error.message);
+  estadoConexion('espera', 'Cerrando puerto USB…', '');
+  try {
+    await sesion.reader?.cancel();
+  } catch {}
+  sesion.reader?.releaseLock();
+  sesion.writer?.releaseLock();
+  try { await sesion.port.close(); } catch (e) { log('Cierre del puerto: ' + e.message); }
+  conexion = null;
+  actualizarBotonesConexion();
+  actualizarTelemetria();
+  estadoConexion(error ? 'error' : '', error ? 'Conexión USB interrumpida' : 'Sin conexión',
+    error ? 'Revisá el cable y el hub; luego volvé a conectar.' : 'Conectá la NodeMCU y elegí el puerto CP2102 / USB Serial.');
+}
+
+async function escribirSerie(sesion, c, mostrar = true) {
+  if (sesion.cerrando) return;
+  if (mostrar) log('> ' + c);
+  try {
+    await sesion.writer.write(new TextEncoder().encode(c + '\n'));
+  } catch (e) {
+    if (!sesion.cerrando) void cerrarSerie(sesion, e);
+  }
+}
+
+async function leerSerie(sesion) {
+  const decoder = new TextDecoder();
+  let buf = '';
+  try {
+    while (!sesion.cerrando) {
+      const { value, done } = await sesion.reader.read();
+      if (sesion.cerrando) return;
+      if (done) break;
+      sesion.bytesRecibidos += value.byteLength;
+      buf += decoder.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        procesarLinea(buf.slice(0, i), sesion);
+        buf = buf.slice(i + 1);
+      }
+      if (buf.length > 8192) buf = '';
+    }
+    if (!sesion.cerrando) void cerrarSerie(sesion, new Error('El puerto dejó de enviar datos.'));
+  } catch (e) {
+    if (!sesion.cerrando) void cerrarSerie(sesion, e);
+  }
+}
+
 $('btnConectar').onclick = async () => {
-  if (!('serial' in navigator)) {
-    alert('Este navegador no soporta Web Serial. Abrí la app con Google Chrome o Microsoft Edge en una computadora.');
+  if (conexion) return cerrarSerie(conexion);
+  if (abriendoPuerto) return;
+  if (!navigator.serial) {
+    const ayuda = 'Abrí la app en Chrome o Edge de escritorio. Si la servís desde una web, usá HTTPS o localhost.';
+    if (modo === 'sim') mostrarAviso(ayuda);
+    else estadoConexion('error', 'Web Serial no disponible', ayuda);
     return;
   }
+  abriendoPuerto = true;
+  actualizarBotonesConexion();
   try {
-    const port = await navigator.serial.requestPort();
-    await port.open({ baudRate: 115200 });
+    const port = await navigator.serial.requestPort({ filters: [PUERTO_CP2102] });
+    await port.open({ baudRate: 115200, flowControl: 'none' });
+    const sesion = conexion = { port, lista: false, cerrando: false, lecturas: 0, ultimaLectura: null, bytesRecibidos: 0 };
     detenerSim();
-    modo = 'serie';
-    const enc = new TextEncoder();
-    const writer = port.writable.getWriter();
-    enviar = c => { log('> ' + c); writer.write(enc.encode(c + '\n')); };
-    $('estadoCon').innerHTML = '<b>Conectado</b> por USB';
-    habilitar(true);
-    setTimeout(() => cmd('?'), 300);
-    const reader = port.readable.pipeThrough(new TextDecoderStream()).getReader();
-    let buf = '';
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += value;
-      let i;
-      while ((i = buf.indexOf('\n')) >= 0) { procesarLinea(buf.slice(0, i)); buf = buf.slice(i + 1); }
+    modo = null;
+    enviar = null;
+    habilitar(false);
+    limpiarSesion();
+    $('consola').textContent = '';
+    const { usbVendorId, usbProductId } = port.getInfo();
+    if (usbVendorId !== undefined && usbProductId !== undefined) {
+      log('Puerto USB: ' + usbVendorId.toString(16) + ':' + usbProductId.toString(16));
+    } else log('Chrome no informó el identificador USB del puerto.');
+    // En la NodeMCU, DTR y RTS también se usan para RESET y FLASH.
+    // Dejarlos desactivados antes de esperar la respuesta del sketch.
+    try {
+      await port.setSignals({ dataTerminalReady: false, requestToSend: false });
+    } catch (e) {
+      log('No se pudieron ajustar las señales del puerto: ' + e.message);
     }
+    sesion.reader = port.readable.getReader();
+    sesion.writer = port.writable.getWriter();
+    estadoConexion('espera', 'Puerto USB abierto', 'Esperando que responda el firmware a 115200 baudios…');
+    log('Consultando estado del firmware (?) a 115200 baudios…');
+    sesion.sondeo = setInterval(() => escribirSerie(sesion, '?', false), 750);
+    actualizarTelemetria();
+    sesion.espera = setTimeout(() => {
+      sesion.sinRespuesta = true;
+      actualizarTelemetria();
+    }, 5000);
+    void leerSerie(sesion);
   } catch (e) {
-    if (e.name !== 'NotFoundError') { log('Error: ' + e.message); mostrarAviso('Se perdió la conexión: ' + e.message); }
-    if (modo === 'serie') { $('estadoCon').textContent = 'Sin conexión'; habilitar(false); enviar = null; modo = null; }
+    if (conexion) await cerrarSerie(conexion, e);
+    else if (e.name === 'NotFoundError' && modo !== 'sim') {
+      estadoConexion('', 'Sin puerto seleccionado', 'Si el CP2102 no aparece en el selector, reconectá el USB y volvé a intentar.');
+    }
+    else if (e.name !== 'NotFoundError') {
+      log('No se pudo abrir el puerto: ' + e.message);
+      const ayuda = 'Cerrá el Monitor Serie de Arduino IDE u otra app que use el puerto, y volvé a intentar.';
+      if (modo === 'sim') mostrarAviso(ayuda);
+      else estadoConexion('error', 'No se pudo abrir el puerto USB', ayuda);
+    }
+  } finally {
+    abriendoPuerto = false;
+    actualizarBotonesConexion();
   }
 };
 
@@ -544,8 +774,10 @@ function simSonido(absReal, tipo) {
   sim.ultimo = ahora;
 }
 function iniciarSim() {
+  limpiarSesion();
+  $('consola').textContent = '';
   modo = 'sim'; enviar = simCmd;
-  $('estadoCon').innerHTML = '<b>Simulación</b> — clic en el mapa = aplauso · mantener apretado = alguien hablando';
+  estadoConexion('sim', 'Modo simulación', 'Clic en el mapa para aplaudir; mantené apretado para simular una voz.');
   try { Object.assign(sim, JSON.parse(localStorage.getItem('simCal')) || {}); } catch {}
   habilitar(true); simEstado();
   clearInterval(simCntTimer);
@@ -568,8 +800,26 @@ function iniciarSim() {
     }
   }, 50);
 }
-function detenerSim() { clearInterval(simTimer); simTimer = null; }
-$('btnSim').onclick = () => { if (modo !== 'serie') { detenerSim(); iniciarSim(); } };
+function detenerSim() {
+  clearInterval(simTimer);
+  clearInterval(simCntTimer);
+  simTimer = simCntTimer = null;
+  sim.dest = null;
+  sim.rafaga.i = sim.rafaga.d = 0;
+  soltar(false);
+}
+$('btnSim').onclick = () => {
+  if (conexion || abriendoPuerto) return;
+  if (modo === 'sim') {
+    detenerSim();
+    modo = null;
+    enviar = null;
+    habilitar(false);
+    limpiarSesion();
+    estadoConexion('', 'Sin conexión', 'Conectá la NodeMCU y elegí el puerto CP2102 / USB Serial.');
+  } else iniciarSim();
+  actualizarBotonesConexion();
+};
 
 // ============ Dibujo del mapa ============
 const cv = $('mapa'), ctx = cv.getContext('2d');
@@ -713,6 +963,8 @@ function dibujar() {
   requestAnimationFrame(dibujar);
 }
 actualizarUI();
+actualizarTelemetria();
+setInterval(actualizarTelemetria, 1000);
 dibujar();
 </script>
 </body>

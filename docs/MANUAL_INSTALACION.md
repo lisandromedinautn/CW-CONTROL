@@ -149,14 +149,17 @@ Revisá uno por uno:
 
 ## 10. Instalar el programa en la computadora (se hace una sola vez)
 
+Si la placa ya está programada, para usar la app no necesitás Arduino IDE. La [guía USB](GUIA_USB.md) incluye pasos por sistema operativo, carga con Arduino CLI y diagnóstico de cortes.
+
 ### 10.1 Arduino IDE
 1. Descargar **Arduino IDE 2** desde la página oficial de Arduino (arduino.cc → Software) e instalarlo.
 
 ### 10.2 Soporte para la placa ESP8266
 1. Abrir Arduino IDE → **Archivo → Preferencias**.
 2. En **"URLs adicionales del gestor de placas"** pegar:
-   `http://arduino.esp8266.com/stable/package_esp8266com_index.json`
+   `https://arduino.esp8266.com/stable/package_esp8266com_index.json`
 3. Aceptar. Ir a **Herramientas → Placa → Gestor de placas**, buscar **esp8266** e instalar el de *ESP8266 Community*.
+4. En el gestor de bibliotecas, buscá e instalá **Stepper** si todavía no está instalada.
 
 ### 10.3 Driver USB (sólo si la compu no reconoce la placa)
 - **Windows:** la placa usa el chip **CP2102**. Si al enchufarla no aparece ningún puerto COM nuevo, instalar el driver *"CP210x USB to UART Bridge"* de Silicon Labs.
@@ -222,7 +225,7 @@ Si el motor **vibra pero no gira**, o gira para un solo lado: revisá el orden D
 1. Subí la versión **modificada** del firmware y **cerrá el monitor serie** del Arduino IDE.
 2. Abrí `app/index.html` con **Google Chrome** o **Microsoft Edge** en la compu (doble clic o arrastrarlo al navegador). Firefox y Safari no sirven porque no tienen Web Serial.
 3. Clic en **"Conectar placa (USB)"** → elegir el puerto (CP2102 / COMx / ttyUSB0) → **Conectar**.
-4. Aparece "Conectado". Clic en **Escucha: OFF** para activarla (o apretá el pulsador físico).
+4. Esperá **Placa conectada** y que el contador de **En vivo · USB** empiece a subir. Clic en **Escucha: OFF** para activarla (o apretá el pulsador físico). Para probar los micrófonos sin movimiento automático, elegí **Manual** antes de activar la escucha.
 5. Aplaudí: en el mapa aparece la **línea naranja** hacia el sonido, el micrófono que reaccionó primero se pinta de naranja y la **flecha azul** (la cámara) gira.
 
 | Botón | Qué hace |
