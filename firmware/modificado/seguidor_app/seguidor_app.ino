@@ -378,9 +378,17 @@ void procesarSonido() {
   if (modoCal) {                               // calibrando: nunca mover
     ignorarHasta = millis() + 300;             // evita contar ecos del mismo aplauso
   } else if (modoAuto && lado != 0) {
-    float k    = min(1.0f, ganancia + 0.25f * (racha - 1));
-    float tope = maxGiroDeg * racha;
-    float giro = constrain(correccion * k, -tope, tope);
+    float giro;
+    if (micsGiran) {
+      // Lazo cerrado: el proximo sonido vuelve a medir el error, se corrige de a poco.
+      float k    = min(1.0f, ganancia + 0.25f * (racha - 1));
+      float tope = maxGiroDeg * racha;
+      giro = constrain(correccion * k, -tope, tope);
+    } else {
+      // Lazo abierto: la medicion es absoluta y no habra otra que corrija el resto,
+      // asi que se va directo al angulo medido (solo lo recorta el limite de giro).
+      giro = correccion;
+    }
     moverPasos(gradosAPasos(giro));
   } else {
     if (modoAuto) Serial.println("Sonido al frente, no giro");

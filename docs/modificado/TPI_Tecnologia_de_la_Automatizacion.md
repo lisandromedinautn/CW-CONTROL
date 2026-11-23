@@ -131,6 +131,8 @@ La ley de control de la versión modificada puede escribirse como:
 
 donde e[k] es el error medido en el evento sonoro k, u[k] el giro aplicado y n la **racha**: la cantidad de eventos consecutivos detectados del mismo lado con menos de 2 s entre sí (n ≤ 4). Un sonido aislado tiene n = 1 y produce un giro acotado (K = 0,5, como máximo 15°). Una voz sostenida genera eventos sucesivos que aumentan n y, con ello, la ganancia y el tope de giro, de modo que el soporte responde con más decisión cuando hay evidencia repetida de que la fuente está hacia ese lado. Se trata de una forma sencilla de **control con ganancia variable (gain scheduling)** en función de la confianza en la medición. En la simulación, para un error inicial de 60° con voz sostenida, el tiempo medio hasta apuntar a la fuente se redujo de 6,6 s (ganancia fija) a 3,1 s.
 
+Esta ley (ganancia K_n y saturación por evento) se aplica **sólo con los micrófonos sobre la parte giratoria**, porque allí cada sonido nuevo vuelve a medir el error remanente y lo va corrigiendo. Con los micrófonos fijos la ley es otra (ver 5.6.1): u[k] = e[k], es decir, el soporte gira de una vez hasta el ángulo medido, limitado sólo por el tope de ±120°.
+
 Como el motor paso a paso posiciona por cantidad de pasos y su caja reductora mantiene la posición sin alimentación, la planta no presenta inercia apreciable a la velocidad utilizada; la dinámica del lazo queda dominada por el tiempo de giro y la pausa posterior al movimiento. En la versión modificada la velocidad se elevó a 12 rpm (≈ 72°/s) y la pausa se redujo a 500 ms; ambos valores son ajustables (5 a 15 rpm, ya que por encima de ≈ 15 rpm el 28BYJ-48 tiende a perder pasos).
 
 ## 4.4 Localización acústica por TDOA
@@ -250,11 +252,35 @@ Durante el armado se detectó que, si los micrófonos giran junto con el soporte
 | :---- | :---- | :---- |
 | Tipo de lazo | Cerrado: el sensor mide el error remanente. | Abierto: el sensor mide la dirección absoluta y la posición del soporte se estima contando pasos. |
 | Ángulo medido | Relativo al frente actual del soporte. | Absoluto, respecto del frente fijo de los micrófonos. |
-| Corrección aplicada | pasos = θ_medido | pasos = θ_medido − θ_soporte |
-| Ventaja | Corrige errores del motor (pasos perdidos). | Los cables de los micrófonos no se mueven. |
-| Desventaja | Cables en movimiento. | Si el motor pierde pasos, el error se acumula; requiere una posición inicial conocida ("centro"). |
+| Corrección aplicada | Giro = K_n · θ_medido, con tope por evento (de a poco). | Giro = θ_medido − θ_soporte, completo y de una sola vez. |
+| Criterio de "llegué" | Medido: \|Δt\| dentro de la zona muerta (fuente al frente). | Supuesto: el motor terminó los pasos ordenados. |
+| Ventaja | Corrige errores del motor (pasos perdidos). | Los cables de los micrófonos no se mueven; llega a la fuente con un solo sonido. |
+| Desventaja | Cables en movimiento; necesita varios sonidos para llegar. | Si el motor pierde pasos, el error se acumula; requiere una posición inicial conocida ("centro"). |
 
-En ambos modos la placa mantiene un contador de pasos (posPasos), que se toma como 0 al encender o al presionar "Fijar centro aquí" en la aplicación. Ese contador permite mostrar la orientación en el mapa y aplicar el límite de giro.
+En ambos modos la placa mantiene un contador de pasos (posPasos), que se toma como 0 al encender o al presionar "Fijar centro aquí" en la aplicación. Ese contador permite mostrar la orientación en el mapa y aplicar el límite de giro. **No existe un sensor de posición del soporte**: el contador es una estimación, no una medición.
+
+### 5.6.1 ¿Cómo sabe el sistema cuándo detenerse?
+
+La respuesta depende del modo de montaje, y es justamente lo que distingue un lazo cerrado de uno abierto.
+
+**Micrófonos que giran: lazo cerrado.** Como los micrófonos giran con la cámara, el ángulo que miden es directamente el **error** entre hacia dónde apunta la cámara y dónde está la fuente. El controlador gira sólo una fracción de ese error (K = 0,5, con tope de 15° por sonido), espera la pausa posterior al movimiento y vuelve a medir con el sonido siguiente. El sistema sabe que llegó cuando la propia medición lo indica: |Δt| menor que la zona muerta (60 µs, ≈ ±6°), es decir, la fuente quedó al frente. Si el motor pierde pasos o alguien mueve el soporte con la mano, la medición siguiente ve el error real y lo corrige. Hay que tener en cuenta que la realimentación es **discreta**: cada giro individual se ejecuta sin verificación (se mandan N pasos) y el error se vuelve a medir recién con el próximo sonido. Si nadie habla, no hay realimentación.
+
+**Micrófonos fijos: lazo abierto.** Los micrófonos no se mueven, por lo que miden la dirección **absoluta** de la fuente ("está a +30°"), no el error de la cámara. La posición del soporte no se mide: se estima con el contador de pasos. El controlador calcula cuánto falta (θ_medido − θ_soporte), envía esa cantidad de pasos y da por cumplido el objetivo cuando el motor terminó de darlos. Ningún sensor confirma que el soporte haya quedado efectivamente apuntando a la fuente. Por eso:
+
+* si el motor pierde pasos, el soporte patina o se lo mueve a mano, el contador queda desfasado y el error **no se corrige nunca**, porque los sonidos siguientes se comparan contra esa posición supuesta;
+* el sistema depende de que el "centro" (posición 0) se haya fijado correctamente al encender o con "Fijar centro aquí".
+
+**Corrección realizada en el modo fijo.** En una primera versión, el modo fijo aplicaba la misma ley que el lazo cerrado (K = 0,5 y tope de 15° por sonido). Esa ley sólo tiene sentido si un sonido posterior vuelve a medir el error y completa la corrección. En lazo abierto la medición ya es absoluta y el ángulo de destino se conoce desde el primer sonido, así que recortar el giro sólo hacía que el soporte **quedara a mitad de camino**: con la fuente a 40° y un único aplauso, el soporte giraba 15° y se detenía, sin llegar a mirar a la fuente. Como con los micrófonos fijos sus cables no se mueven, no hace falta limitar el giro por evento. Ahora el soporte gira directamente al ángulo medido, limitado sólo por el tope de ±120°.
+
+| | Micrófonos FIJOS | Micrófonos que GIRAN |
+| :---- | :---- | :---- |
+| Qué mide el sensor | Ángulo absoluto de la fuente | Error entre fuente y cámara |
+| Posición del soporte | Conteo de pasos (estimada) | Conteo de pasos (no interviene en la corrección) |
+| Criterio de llegada | Terminó los pasos ordenados | Δt dentro de la zona muerta |
+| Pérdida de pasos | Error permanente | Se corrige sola |
+| Tipo de control | **Lazo abierto** | **Lazo cerrado** discreto, realimentado por el sonido |
+
+Para cerrar el lazo también con los micrófonos fijos habría que **medir la posición real del soporte**: por ejemplo, un fin de carrera u horquilla infrarroja como referencia de cero (ver OPCIONES_IR.md), o un potenciómetro o encoder en el eje leído por la entrada analógica A0.
 
 ## 5.7 Aplicación de monitoreo y control
 
@@ -611,7 +637,7 @@ La versión modificada (firmware/modificado/seguidor_app/seguidor_app.ino) conse
 | Límite de giro (limiteDeg, ±120° por defecto) | Proteger los cables. |
 | Variable micsGiran | Funcionar en lazo cerrado (micrófonos sobre el soporte) o en lazo abierto (micrófonos fijos). |
 | Modo manual (modoAuto = false) | Mover el soporte sólo por orden del usuario. |
-| Ganancia (ganancia = 0,5), giro máximo por sonido (maxGiroDeg = 15°) y racha | Que un aplauso aislado mueva sólo un poco y una voz sostenida acerque el soporte rápido, aumentando ganancia y tope con cada sonido consecutivo del mismo lado (ver 4.3). Ajustables desde la app. |
+| Ganancia (ganancia = 0,5), giro máximo por sonido (maxGiroDeg = 15°) y racha | Que un aplauso aislado mueva sólo un poco y una voz sostenida acerque el soporte rápido, aumentando ganancia y tope con cada sonido consecutivo del mismo lado (ver 4.3). Ajustables desde la app. Sólo se aplican con los micrófonos sobre la parte giratoria; con micrófonos fijos el giro es completo (ver 5.6.1). |
 | Velocidad 12 rpm y pausa de 500 ms, ajustables (velRpm, esperaPostMs) | Respuesta más rápida que la versión base (10 rpm, 800 ms) sin perder pasos. |
 | Pausa post-movimiento no bloqueante (ignorarHasta) | Reemplaza a delay(800): la placa sigue atendiendo la app durante la pausa. |
 | Lectura de comandos por el puerto serie (revisarSerie, ejecutarComando) | Recibir las órdenes de la app (Tabla 5). |
@@ -633,13 +659,19 @@ else
 ladoRacha = lado;
 
 if (modoAuto && lado != 0) {
-  float k    = min(1.0f, ganancia + 0.25f * (racha - 1));
-  float tope = maxGiroDeg * racha;
-  moverPasos(gradosAPasos(constrain(correccion * k, -tope, tope)));
+  float giro;
+  if (micsGiran) {                              // lazo cerrado: de a poco
+    float k    = min(1.0f, ganancia + 0.25f * (racha - 1));
+    float tope = maxGiroDeg * racha;
+    giro = constrain(correccion * k, -tope, tope);
+  } else {                                      // lazo abierto: directo al ángulo medido
+    giro = correccion;
+  }
+  moverPasos(gradosAPasos(giro));               // recorta al límite de ±120°
 }
 ```
 
-Con los micrófonos girando, angAbs − posDeg es igual a angRel; con ganancia 1 y sin límite por evento, el comportamiento sería idéntico al de la versión base. Con los micrófonos fijos, la corrección descuenta la posición actual del soporte.
+Con los micrófonos girando, angAbs − posDeg es igual a angRel; con ganancia 1 y sin límite por evento, el comportamiento sería idéntico al de la versión base. Con los micrófonos fijos, la corrección descuenta la posición actual del soporte y se aplica completa, porque no habrá una medición posterior del error que complete un giro parcial (ver 5.6.1).
 
 # 8. Resultados
 
@@ -678,7 +710,7 @@ Se sugiere incluir capturas de la aplicación durante los ensayos y una foto del
 
 Se desarrolló un prototipo de soporte motorizado capaz de orientar un teléfono celular hacia la dirección de procedencia de un sonido, empleando exclusivamente los componentes provistos por la cátedra. El sistema integra las etapas clásicas de un lazo de control: un sensor (dos micrófonos y la medición de la diferencia de tiempo de llegada), un controlador (el ESP8266, que implementa una ley proporcional con zona muerta y saturación), un actuador (driver ULN2003 y motor paso a paso) y una planta (el soporte giratorio).
 
-El montaje de los micrófonos sobre la parte giratoria permitió cerrar el lazo de manera natural, ya que cada medición representa el error de orientación remanente. Se comprobó además que, cuando el montaje obliga a dejar los micrófonos fijos, el sistema puede operar en lazo abierto gracias a la capacidad del motor paso a paso de posicionar contando pasos, con la contrapartida de acumular error si se pierden pasos.
+El montaje de los micrófonos sobre la parte giratoria permitió cerrar el lazo de manera natural, ya que cada medición representa el error de orientación remanente. Se comprobó además que, cuando el montaje obliga a dejar los micrófonos fijos, el sistema puede operar en lazo abierto gracias a la capacidad del motor paso a paso de posicionar contando pasos, con la contrapartida de acumular error si se pierden pasos. En ese modo el criterio de llegada es haber completado los pasos ordenados y no una medición, por lo que la corrección se aplica completa en un solo movimiento: aplicarle la ganancia y el tope del lazo cerrado dejaba el soporte a mitad de camino.
 
 La incorporación de una aplicación de monitoreo resultó de gran utilidad tanto para la calibración como para la demostración del funcionamiento, al hacer visibles en tiempo real las variables internas del sistema. El modo manual, el botón de parada y el límite de giro aportan seguridad y flexibilidad de uso.
 

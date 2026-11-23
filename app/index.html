@@ -70,10 +70,24 @@
   .paso { border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
   .paso h3 { margin: 0 0 6px; font-size: 15px; }
   .paso p { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
+  .esq { display: block; width: 100%; max-width: 260px; margin: 0 auto 8px; }
+  .esq text { font: 600 10px system-ui, sans-serif; fill: var(--muted); }
+  .esq .base { fill: var(--grid); stroke: var(--line); }
+  .esq .cam { fill: var(--accent); }
+  .esq .mic { fill: var(--mic); }
+  .esq .mic-t { fill: var(--mic); }
+  .esq .ap { fill: var(--snd); }
+  .esq .ap-t { fill: var(--snd); }
+  .esq .guia { stroke: var(--muted); stroke-dasharray: 4 3; fill: none; }
+  .esq .flecha { stroke: var(--accent); fill: none; stroke-width: 1.5; }
   .medidor { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 13px; }
   .medidor .barra { flex: 1; height: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
   .medidor .barra i { display: block; height: 100%; width: 0; background: var(--mic); transition: width .2s; }
   .medidor b { width: 70px; text-align: right; font-variant-numeric: tabular-nums; }
+  .luces { display: flex; justify-content: space-around; margin: 6px 0 10px; }
+  .luz { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
+  .luz i { width: 34px; height: 34px; border-radius: 50%; background: var(--bg); border: 2px solid var(--line); transition: background .15s, box-shadow .15s; }
+  .luz.on i { background: var(--mic); border-color: var(--mic); box-shadow: 0 0 12px var(--mic); }
   .res { font-size: 13px; background: var(--bg); border-radius: 8px; padding: 8px; margin: 8px 0; min-height: 36px; }
   .ok { color: var(--mic); font-weight: 600; } .mal { color: var(--danger); font-weight: 600; }
   .aviso { background: var(--limit); border: 1px solid var(--danger); border-radius: 8px; padding: 8px 10px; font-size: 13px; display: none; margin-bottom: 10px; }
@@ -176,7 +190,7 @@
           <input type="number" id="pausa" min="100" max="2000" step="50" value="500" data-req>
           <button id="btnVel" data-req>Aplicar</button>
         </div>
-        <div class="hint">Un aplauso suelto corrige como mucho “giro máx.”. Si llegan sonidos seguidos del mismo lado (voz sostenida) se forma una <b>racha</b>: cada sonido puede girar más (tope × racha) y la ganancia sube 0,25 por sonido.</div>
+        <div class="hint">Un aplauso suelto corrige como mucho “giro máx.”. Si llegan sonidos seguidos del mismo lado (voz sostenida) se forma una <b>racha</b>: cada sonido puede girar más (tope × racha) y la ganancia sube 0,25 por sonido. Con <b>micrófonos fijos</b> no se usan ganancia ni giro máx.: gira directo al ángulo medido.</div>
       </details>
 
       <details>
@@ -200,6 +214,16 @@
       <div class="pasos">
         <div class="paso">
           <h3>1 · Sensibilidad (tornillito)</h3>
+          <svg class="esq" viewBox="0 0 240 150" role="img" aria-label="Vista desde arriba: aplaudir a 1 metro delante del soporte">
+            <path class="guia" d="M120 38 V100"/><text x="126" y="72">~1 m</text>
+            <circle class="ap" cx="120" cy="26" r="11"/><text x="120" y="30" text-anchor="middle" style="fill:#fff">👏</text>
+            <text class="ap-t" x="138" y="22">aplauso</text>
+            <rect class="base" x="80" y="104" width="80" height="16" rx="4"/>
+            <rect class="cam" x="114" y="100" width="12" height="8" rx="2"/>
+            <circle class="mic" cx="95" cy="112" r="5"/><circle class="mic" cx="145" cy="112" r="5"/>
+            <text class="mic-t" x="95" y="134" text-anchor="middle">IZQ</text><text class="mic-t" x="145" y="134" text-anchor="middle">DER</text>
+            <text x="120" y="148" text-anchor="middle">visto desde arriba · vos detrás de la cámara</text>
+          </svg>
           <p>En <b>silencio</b> las dos barras deben quedar en 0. Si una se mueve sola, girá su tornillo para hacerla menos sensible. Después aplaudí a ~1 m: deben subir <b>las dos</b>.</p>
           <div class="medidor">IZQ <span class="barra"><i id="barI"></i></span><b id="actI">0 /s</b></div>
           <div class="medidor">DER <span class="barra"><i id="barD"></i></span><b id="actD">0 /s</b></div>
@@ -207,7 +231,30 @@
           <button id="btnConjReset">Reiniciar conteo</button>
         </div>
         <div class="paso">
+          <h3>Prueba de cada micrófono</h3>
+          <p>Cada luz se prende cuando <b>ese</b> micrófono escucha algo. Tocá un botón y, durante 5 s, chasqueá los dedos o aplaudí <b>cerca (~10 cm)</b> de ese micrófono.</p>
+          <div class="luces">
+            <div class="luz" id="luzI"><i></i>IZQ (D1)</div>
+            <div class="luz" id="luzD"><i></i>DER (D2)</div>
+          </div>
+          <div class="fila"><button id="btnPrIzq">Probar IZQ</button><button id="btnPrDer">Probar DER</button><button id="btnPrVoz">Balance con voz</button></div>
+          <p><b>Balance con voz:</b> parate al frente, a ~1 m, y hablá 10 s a volumen parejo (contá en voz alta). Compara cuánto responde cada micrófono a la voz.</p>
+          <div class="res" id="resPrueba">–</div>
+        </div>
+        <div class="paso">
           <h3>2 · Centro (offset)</h3>
+          <svg class="esq" viewBox="0 0 240 150" role="img" aria-label="Vista desde arriba: aplaudir justo enfrente del soporte, a la misma distancia de los dos micrófonos">
+            <path class="guia" d="M120 38 L95 106 M120 38 L145 106"/>
+            <text x="60" y="72">igual</text><text x="150" y="72">igual</text>
+            <text x="120" y="84" text-anchor="middle">1–1,5 m</text>
+            <circle class="ap" cx="120" cy="26" r="11"/><text x="120" y="30" text-anchor="middle" style="fill:#fff">👏</text>
+            <text class="ap-t" x="138" y="22">10 aplausos</text>
+            <rect class="base" x="80" y="104" width="80" height="16" rx="4"/>
+            <rect class="cam" x="114" y="100" width="12" height="8" rx="2"/>
+            <circle class="mic" cx="95" cy="112" r="5"/><circle class="mic" cx="145" cy="112" r="5"/>
+            <text class="mic-t" x="95" y="134" text-anchor="middle">IZQ</text><text class="mic-t" x="145" y="134" text-anchor="middle">DER</text>
+            <text x="120" y="148" text-anchor="middle">justo al frente: misma distancia a los dos</text>
+          </svg>
           <p>Parate <b>justo enfrente</b> del soporte, a 1–1,5 m, y aplaudí <b>10 veces</b> (de a una, separadas). Corrige que un micrófono se dispare antes que el otro.</p>
           <button id="btnMedCentro">Medir al frente</button>
           <div class="res" id="resCentro">–</div>
@@ -215,6 +262,19 @@
         </div>
         <div class="paso">
           <h3>3 · Escala (separación)</h3>
+          <svg class="esq" viewBox="0 0 240 150" role="img" aria-label="Vista desde arriba: aplaudir de costado, alineado con los dos micrófonos, primero a la izquierda y después a la derecha">
+            <path class="flecha" d="M120 98 V58 M115 64 L120 58 L125 64"/><text x="120" y="52" text-anchor="middle">frente</text>
+            <path class="guia" d="M31 112 H88 M152 112 H209"/>
+            <circle class="ap" cx="20" cy="112" r="11"/><text x="20" y="116" text-anchor="middle" style="fill:#fff">👏</text>
+            <circle class="ap" cx="220" cy="112" r="11"/><text x="220" y="116" text-anchor="middle" style="fill:#fff">👏</text>
+            <text class="ap-t" x="20" y="92" text-anchor="middle">10 izq.</text><text class="ap-t" x="220" y="92" text-anchor="middle">10 der.</text>
+            <text x="58" y="106" text-anchor="middle">90°</text><text x="182" y="106" text-anchor="middle">90°</text>
+            <rect class="base" x="80" y="104" width="80" height="16" rx="4"/>
+            <rect class="cam" x="114" y="100" width="12" height="8" rx="2"/>
+            <circle class="mic" cx="95" cy="112" r="5"/><circle class="mic" cx="145" cy="112" r="5"/>
+            <text class="mic-t" x="95" y="134" text-anchor="middle">IZQ</text><text class="mic-t" x="145" y="134" text-anchor="middle">DER</text>
+            <text x="120" y="148" text-anchor="middle">en la línea de los micrófonos, a ~1 m</text>
+          </svg>
           <p>Parate <b>de costado</b>, en la misma línea que los dos micrófonos (90°). 10 aplausos del lado izquierdo y 10 del derecho.</p>
           <div class="fila"><button id="btnMedIzq">Medir izquierda</button><button id="btnMedDer">Medir derecha</button></div>
           <div class="res" id="resEscala">–</div>
@@ -395,11 +455,95 @@ function calActividad(d) {         // d.i / d.d = flancos en 250 ms
     const porSeg = n * 4;
     $('bar' + k).style.width = Math.min(100, Math.log10(1 + porSeg) / Math.log10(2001) * 100) + '%';
     $('act' + k).textContent = porSeg + ' /s';
+    if (n > 0) {
+      const luz = $('luz' + k);
+      luz.classList.add('on');
+      clearTimeout(luz._t); luz._t = setTimeout(() => luz.classList.remove('on'), 300);
+    }
   });
+  if (prueba) { prueba.i += d.i; prueba.d += d.d; }
 }
+
+// Prueba individual: se cuentan los disparos de cada mic durante 5 s mientras
+// el usuario hace ruido cerca de uno solo.
+let prueba = null;
+const PINES = { izq: 'D1', der: 'D2' };
+function probarMic(lado) {
+  if (!st.cal) return mostrarAviso('Primero tocá “Iniciar calibración”.');
+  if (prueba) return;
+  prueba = { lado, i: 0, d: 0 };
+  const caja = $('resPrueba');
+  let resta = 5;
+  caja.innerHTML = `Hacé ruido cerca del micrófono <b>${lado.toUpperCase()}</b>… ${resta} s`;
+  const t = setInterval(() => {
+    resta--;
+    if (resta > 0) { caja.innerHTML = `Hacé ruido cerca del micrófono <b>${lado.toUpperCase()}</b>… ${resta} s`; return; }
+    clearInterval(t);
+    const { i, d } = prueba; prueba = null;
+    const propio = lado === 'izq' ? i : d, otro = lado === 'izq' ? d : i;
+    const nom = lado.toUpperCase(), otroNom = lado === 'izq' ? 'DER' : 'IZQ';
+    let msg;
+    if (!propio && !otro)
+      msg = `✗ <b>No se escuchó nada.</b> Acercate más o hacé más ruido. Si sigue igual: girá el tornillito de ${nom} para hacerlo más sensible (hasta que se prenda su LED con el ruido) y revisá el cable de su D0 → <b>${PINES[lado]}</b>, + → 3V3 y G → GND.`;
+    else if (!propio)
+      msg = `✗ <b>Respondió ${otroNom}, no ${nom}.</b> Probablemente los cables de señal están <b>cruzados</b>: el D0 del micrófono ${nom} tiene que ir a <b>${PINES[lado]}</b>.`;
+    else if (otro > propio)
+      msg = `⚠ ${nom} escuchó (${propio}), pero ${otroNom} escuchó más (${otro}). ¿Están cruzados los cables o ${nom} está poco sensible?`;
+    else if (otro)
+      msg = `✓ <b>${nom} funciona</b> (${propio} disparos). ${otroNom} también captó algo (${otro}), es normal si están cerca.`;
+    else
+      msg = `✓ <b>${nom} funciona</b> (${propio} disparos) y ${otroNom} no se activó.`;
+    caja.innerHTML = msg;
+  }, 1000);
+}
+// Balance con voz: la voz queda cerca del umbral, así que revela diferencias de
+// sensibilidad que los aplausos (muy por encima del umbral) esconden.
+function probarVoz() {
+  if (!st.cal) return mostrarAviso('Primero tocá “Iniciar calibración”.');
+  if (prueba) return;
+  prueba = { lado: 'voz', i: 0, d: 0, snd: { izq: 0, der: 0, ambos: 0, primI: 0, primD: 0 } };
+  const caja = $('resPrueba');
+  let resta = 10;
+  const txt = () => caja.innerHTML = `Hablá al frente, a ~1 m, a volumen parejo… <b>${resta} s</b>`;
+  txt();
+  const t = setInterval(() => {
+    if (--resta > 0) return txt();
+    clearInterval(t);
+    const { i, d, snd } = prueba; prueba = null;
+    const tot = i + d;
+    if (tot < 4) {
+      caja.innerHTML = '✗ <b>Casi no se escuchó la voz.</b> Hablá más fuerte o más cerca, o subí la sensibilidad de los dos (girando el tornillito hasta justo antes de que su LED quede prendido en silencio).';
+      return;
+    }
+    const pI = Math.round(i / tot * 100), pD = 100 - pI;
+    const det = `IZQ <b>${i}</b> (${pI}%) · DER <b>${d}</b> (${pD}%)`;
+    const ev = snd.izq + snd.der + snd.ambos;
+    const evTxt = ev ? `<br>Eventos: ${snd.ambos} con los dos, ${snd.izq} solo IZQ, ${snd.der} solo DER` +
+      (snd.ambos ? ` · disparó primero: IZQ ${snd.primI}, DER ${snd.primD}` : '') + '.' : '';
+    let msg;
+    if (Math.abs(pI - pD) <= 20)
+      msg = `✓ <b>Balanceados.</b> ${det}${evTxt}`;
+    else {
+      const fuerte = pI > pD ? 'IZQ' : 'DER', debil = fuerte === 'IZQ' ? 'DER' : 'IZQ';
+      msg = `⚠ <b>${fuerte} responde más a la voz.</b> ${det}${evTxt}<br>Bajale un poco la sensibilidad a ${fuerte} o subísela a ${debil} (de a 1/8 de vuelta) y repetí hasta que queden parecidos (diferencia ≤ 20%).`;
+    }
+    caja.innerHTML = msg;
+  }, 1000);
+}
+function pruebaSonido(d) {
+  if (!prueba?.snd) return;
+  const s = prueba.snd;
+  if (d.src === 'izq') s.izq++;
+  else if (d.src === 'der') s.der++;
+  else { s.ambos++; if (d.raw > 0) s.primI++; else if (d.raw < 0) s.primD++; }
+}
+$('btnPrVoz').onclick = probarVoz;
+$('btnPrIzq').onclick = () => probarMic('izq');
+$('btnPrDer').onclick = () => probarMic('der');
 
 function calSonido(d) {
   if (!st.cal) return;
+  pruebaSonido(d);
   cal.total++; if (d.src === 'ambos') cal.ambos++;
   const pct = Math.round(cal.ambos / cal.total * 100);
   $('resConj').innerHTML = `Detección conjunta: <b>${cal.ambos} de ${cal.total}</b> (${pct}%) — ` +
@@ -604,24 +748,41 @@ async function escribirSerie(sesion, c, mostrar = true) {
 
 async function leerSerie(sesion) {
   const decoder = new TextDecoder();
+  // Errores de línea que Web Serial informa sin cerrar el puerto (frecuentes en
+  // Windows con el CP210x al arrancar la placa): se pide un lector nuevo y se sigue.
+  const RECUPERABLES = ['BreakError', 'FramingError', 'ParityError', 'BufferOverrunError'];
   let buf = '';
-  try {
-    while (!sesion.cerrando) {
-      const { value, done } = await sesion.reader.read();
-      if (sesion.cerrando) return;
-      if (done) break;
-      sesion.bytesRecibidos += value.byteLength;
-      buf += decoder.decode(value, { stream: true });
-      let i;
-      while ((i = buf.indexOf('\n')) >= 0) {
-        procesarLinea(buf.slice(0, i), sesion);
-        buf = buf.slice(i + 1);
+  let recuperaciones = 0;
+  while (!sesion.cerrando) {
+    try {
+      while (!sesion.cerrando) {
+        const { value, done } = await sesion.reader.read();
+        if (sesion.cerrando) return;
+        if (done) break;
+        sesion.bytesRecibidos += value.byteLength;
+        buf += decoder.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf('\n')) >= 0) {
+          procesarLinea(buf.slice(0, i), sesion);
+          buf = buf.slice(i + 1);
+        }
+        if (buf.length > 8192) buf = '';
       }
-      if (buf.length > 8192) buf = '';
+      if (!sesion.cerrando) void cerrarSerie(sesion, new Error('El puerto dejó de enviar datos.'));
+      return;
+    } catch (e) {
+      if (sesion.cerrando) return;
+      if (RECUPERABLES.includes(e.name) && sesion.port.readable && recuperaciones < 50) {
+        recuperaciones++;
+        log('Aviso USB (' + e.name + '), se sigue leyendo.');
+        try { sesion.reader.releaseLock(); } catch {}
+        sesion.reader = sesion.port.readable.getReader();
+        buf = '';
+        continue;
+      }
+      void cerrarSerie(sesion, e);
+      return;
     }
-    if (!sesion.cerrando) void cerrarSerie(sesion, new Error('El puerto dejó de enviar datos.'));
-  } catch (e) {
-    if (!sesion.cerrando) void cerrarSerie(sesion, e);
   }
 }
 
@@ -768,8 +929,9 @@ function simSonido(absReal, tipo) {
   procesarLinea(`@SND {"dt":${dt},"raw":${raw},"rel":${r.toFixed(1)},"abs":${abs.toFixed(1)},"src":"${src}","pos":${posDeg.toFixed(1)},"auto":${+sim.auto},"racha":${sim.racha},"tipo":"${tipo}"}`);
   if (sim.cal) sim.ignorar = ahora + 300;                      // calibrando: no mover
   else if (sim.auto && lado) {
+    // Igual que el firmware: mics que giran = de a poco (lazo cerrado); fijos = directo (lazo abierto)
     const k = Math.min(1, sim.k + 0.25 * (sim.racha - 1)), tope = sim.pmax * sim.racha;
-    simMover(g2p(Math.max(-tope, Math.min(tope, corr * k))));
+    simMover(g2p(sim.giran ? Math.max(-tope, Math.min(tope, corr * k)) : corr));
   } else sim.ignorar = ahora + sim.pausa;
   sim.ultimo = ahora;
 }
