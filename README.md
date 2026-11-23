@@ -15,6 +15,7 @@ NodeMCU ESP8266 + 2 micrófonos KY-037 + motor 28BYJ-48 (driver ULN2003) + pulsa
 | `docs/base/` | Informe original |
 | `docs/modificado/` | Informe completo (marco teórico, conexionado, app, plantilla de resultados) |
 | `docs/modificado/OPCIONES_IR.md` | Comparación de alternativas de control infrarrojo (a decidir) |
+| `docs/modificado/RESULTADOS_MICROFONOS.md` | Diagnóstico del desbalance de micrófonos, mediciones, modo voz y pendientes |
 
 ## Uso rápido
 

@@ -17,6 +17,11 @@
 //   8. Control infrarrojo OPCIONAL (USAR_IR). Ver docs/modificado/OPCIONES_IR.md
 //   9. Movimiento suavizado: ganancia < 1 y giro maximo por sonido, para que
 //      un aplauso aislado no haga girar todo de una.
+//  10. MODO VOZ (E1): en vez de medir tiempos compara la ACTIVIDAD (pulsos)
+//      de cada micro, corregida por un factor de balance calibrado desde el
+//      centro (comando I). Necesario porque con modulos de salida digital el
+//      ataque lento de la voz hace inutil la diferencia de tiempos.
+//      Ver docs/modificado/RESULTADOS_MICROFONOS.md
 //
 //  COMANDOS (terminar cada uno con Enter / salto de linea):
 //   L1 / L0 / L  escucha ON / OFF / alternar
@@ -38,6 +43,10 @@
 //   O<us>        offset de dt (diferencia de sensibilidad). Ej: O35
 //   D<metros>    separacion efectiva entre mics. Ej: D0.205
 //   Y<us>        zona muerta. Ej: Y45
+//   U1 / U0      usar / ignorar sonidos que solo oye UN micro (defecto U0 = ignorar)
+//   E1 / E0      modo VOZ por actividad on / off (requiere mics que giran)
+//   I            calibrar balance: hablar ~3 s desde el centro (luego S para guardar)
+//   H<factor>    balance manual = pulsos DER / pulsos IZQ al centro. Ej: H6
 //   S            guardar calibracion en la memoria de la placa
 //   B            volver a la calibracion de fabrica (luego S para guardar)
 //   ?            pedir estado
@@ -58,7 +67,7 @@ const uint8_t PIN_BOTON   = D5;
 const uint8_t PIN_LED     = D4;               // GPIO2, activo en LOW
 
 // ---------- Ajustes de geometria ----------
-const float SEPARACION_M     = 0.20;          // distancia entre micrófonos (metros)
+const float SEPARACION_M     = 0.137;         // distancia entre micrófonos (metros) ~ alto de un Galaxy J2
 const float VEL_SONIDO       = 343.0;         // m/s
 const long  ZONA_MUERTA_US   = 60;            // diferencia menor a esto = sonido al frente
 const unsigned long VENTANA_US = 2000;        // tiempo maximo de espera al 2do micrófono
@@ -85,8 +94,21 @@ long  zonaMuertaUs = ZONA_MUERTA_US; // zona muerta (us)
 bool  modoCal      = false;          // en calibracion: informa pero NO mueve el motor
 volatile uint32_t cntIzq = 0, cntDer = 0;   // flancos por micro (medidor de actividad)
 unsigned long ultimoCnt = 0;
-struct Calib { uint32_t magic; long offset; float sep; long zona; };
-const uint32_t CAL_MAGIC = 0xCA1B0001;
+struct Calib { uint32_t magic; long offset; float sep; long zona; float balance; };
+const uint32_t CAL_MAGIC_V1 = 0xCA1B0001;   // version sin balance
+const uint32_t CAL_MAGIC    = 0xCA1B0002;
+
+// ---------- Modo VOZ (por actividad) ----------
+bool  modoVoz      = false;
+float balanceDer   = 1.0;            // pulsos DER / pulsos IZQ con la fuente al centro
+volatile uint32_t vozIzq = 0, vozDer = 0;
+unsigned long ultimaVoz = 0;
+const unsigned long VOZ_VENTANA_MS = 200;   // cada cuanto se compara
+const uint32_t VOZ_MIN_PULSOS = 20;         // menos que esto (sumando) = silencio
+const float    VOZ_ZONA       = 0.30;       // |desbalance| menor = al frente
+const float    VOZ_PASO_DEG   = 6.0;        // giro maximo por ventana
+unsigned long calBalHasta = 0;              // > 0: calibrando balance
+uint32_t calBalI = 0, calBalD = 0;
 
 // ---------- Motor ----------
 const int PASOS_POR_VUELTA = 2048;
@@ -106,6 +128,7 @@ unsigned long lastChange = 0;
 long  posPasos   = 0;        // posicion actual en pasos (+ = izquierda, 0 = centro)
 bool  modoAuto   = true;     // true = sigue el sonido; false = manual
 bool  micsGiran  = true;     // true = mics sobre la parte giratoria
+bool  usarUnico  = false;    // false = descartar sonidos que oyo un solo micro
 float limiteDeg  = 120.0;    // limite de giro a cada lado
 bool  pedirStop  = false;
 bool  moviendo   = false;
@@ -133,20 +156,34 @@ const uint64_t IR_MODO    = 0x0;   // auto / manual
 #endif
 
 // =====================================================================
-void IRAM_ATTR isrIzq() { if (!tIzq) tIzq = micros(); cntIzq++; }
-void IRAM_ATTR isrDer() { if (!tDer) tDer = micros(); cntDer++; }
+// Deteccion de ATAQUE: solo vale el primer pulso despues de un silencio de ese micro.
+// Con una voz sostenida el comparador dispara en cada ciclo de la onda; sin esto
+// cada micro "engancha" un ciclo distinto y el dt sale al azar (+-1000 us).
+const uint32_t SILENCIO_US = 15000;
+volatile uint32_t ultIzq = 0, ultDer = 0;     // ultimo pulso de cada micro
+void IRAM_ATTR isrIzq() {
+  uint32_t t = micros();
+  if (!tIzq && t - ultIzq > SILENCIO_US) tIzq = t;
+  ultIzq = t; cntIzq++; vozIzq++;
+}
+void IRAM_ATTR isrDer() {
+  uint32_t t = micros();
+  if (!tDer && t - ultDer > SILENCIO_US) tDer = t;
+  ultDer = t; cntDer++; vozDer++;
+}
 
 void cargarCalib() {
   Calib c;
   EEPROM.get(0, c);
-  if (c.magic == CAL_MAGIC && c.sep > 0.05f && c.sep < 1.0f) {
+  if ((c.magic == CAL_MAGIC || c.magic == CAL_MAGIC_V1) && c.sep > 0.05f && c.sep < 1.0f) {
     offsetUs = c.offset; sepEfectiva = c.sep; zonaMuertaUs = c.zona;
+    if (c.magic == CAL_MAGIC && c.balance > 0.05f && c.balance < 50.0f) balanceDer = c.balance;
     Serial.println("Calibracion cargada de la memoria");
   }
 }
 
 void guardarCalib() {
-  Calib c = { CAL_MAGIC, offsetUs, sepEfectiva, zonaMuertaUs };
+  Calib c = { CAL_MAGIC, offsetUs, sepEfectiva, zonaMuertaUs, balanceDer };
   EEPROM.put(0, c);
   EEPROM.commit();
   Serial.println("Calibracion GUARDADA");
@@ -176,11 +213,11 @@ void enviarEstado() {
   Serial.printf("@STATE {\"esc\":%d,\"auto\":%d,\"giran\":%d,\"pos\":%ld,"
                 "\"deg\":%.1f,\"lim\":%.0f,\"sep\":%.2f,\"mov\":%d,\"ir\":%d,"
                 "\"k\":%.2f,\"pmax\":%.0f,\"vel\":%d,\"pausa\":%lu,"
-                "\"cal\":%d,\"off\":%ld,\"zona\":%ld}\n",
+                "\"cal\":%d,\"off\":%ld,\"zona\":%ld,\"unico\":%d,\"voz\":%d,\"bal\":%.2f}\n",
                 escuchando, modoAuto, micsGiran, posPasos,
                 pasosAGrados(posPasos), limiteDeg, sepEfectiva, moviendo, USAR_IR,
                 ganancia, maxGiroDeg, velRpm, esperaPostMs,
-                modoCal, offsetUs, zonaMuertaUs);
+                modoCal, offsetUs, zonaMuertaUs, usarUnico, modoVoz, balanceDer);
   ultimoEstado = millis();
 }
 
@@ -317,8 +354,19 @@ void ejecutarComando(char *cmd) {
     case 'O': offsetUs = constrain((long)v, -400L, 400L); enviarEstado(); break;
     case 'D': sepEfectiva = constrain(v, 0.05f, 1.0f); enviarEstado(); break;
     case 'Y': zonaMuertaUs = constrain((long)v, 10L, 300L); enviarEstado(); break;
+    case 'U': usarUnico = (cmd[1] == '1');
+              Serial.println(usarUnico ? "Se usan sonidos de un solo micro" : "Se ignoran sonidos de un solo micro");
+              enviarEstado(); break;
+    case 'E': modoVoz = (cmd[1] == '1');
+              if (modoVoz && !micsGiran) Serial.println("AVISO: el modo voz necesita mics que giran (R)");
+              Serial.println(modoVoz ? "Modo VOZ (por actividad)" : "Modo voz apagado");
+              enviarEstado(); break;
+    case 'H': if (v > 0.05f && v < 50.0f) balanceDer = v; enviarEstado(); break;
+    case 'I': calBalI = 0; calBalD = 0; calBalHasta = millis() + 3000;
+              if (!escuchando) setEscucha(true);
+              Serial.println("Calibrando balance: habla desde el CENTRO durante 3 s..."); break;
     case 'S': guardarCalib(); break;
-    case 'B': offsetUs = 0; sepEfectiva = SEPARACION_M; zonaMuertaUs = ZONA_MUERTA_US;
+    case 'B': offsetUs = 0; sepEfectiva = SEPARACION_M; zonaMuertaUs = ZONA_MUERTA_US; balanceDer = 1.0;
               Serial.println("Calibracion restablecida (falta S para guardar)"); enviarEstado(); break;
     default:  Serial.printf("@ERR {\"msg\":\"comando desconocido: %s\"}\n", cmd);
   }
@@ -342,6 +390,16 @@ void procesarSonido() {
   if (ambos) {
     dtCrudo = (long)(int32_t)(b - a);          // >0 : llegó primero al izquierdo
     dt = dtCrudo - offsetUs;                   // corregido por calibracion
+    // El sonido no puede tardar mas que sep/c entre mics (~400 us con 13.7 cm).
+    // Un dt mayor = un micro se disparo antes por ruido (sensibilidad muy alta)
+    // o muy tarde (sensibilidad baja). Se descarta en vez de saturar a +-90.
+    long dtMax = lroundf(sepEfectiva / VEL_SONIDO * 1e6f * 1.25f);
+    if (labs(dt) > dtMax) {
+      Serial.printf("dt = %ld us imposible (max %ld) -> descartado\n", dt, dtMax);
+      ignorarHasta = millis() + 150;
+      limpiarTiempos();
+      return;
+    }
     if (labs(dt) < zonaMuertaUs) {
       angRel = 0;
       Serial.println("Sonido al frente");
@@ -353,6 +411,12 @@ void procesarSonido() {
     }
     fuente = "ambos";
   } else {
+    if (!usarUnico && !modoCal) {              // tipico de sensibilidades desparejas
+      Serial.printf("Solo reacciono el micro %s -> ignorado\n", a ? "izquierdo" : "derecho");
+      ignorarHasta = millis() + 150;
+      limpiarTiempos();
+      return;
+    }
     angRel = a ? ANGULO_UNICO : -ANGULO_UNICO;
     fuente = a ? "izq" : "der";
     Serial.printf("Solo reacciono el micrófono %s -> %.1f grados\n",
@@ -398,6 +462,45 @@ void procesarSonido() {
   limpiarTiempos();
 }
 
+// ---------- Modo VOZ: comparar actividad de cada micro ----------
+void procesarVoz() {
+  if (millis() - ultimaVoz < VOZ_VENTANA_MS) return;
+  ultimaVoz = millis();
+  noInterrupts();
+  uint32_t ci = vozIzq, cd = vozDer;
+  vozIzq = 0; vozDer = 0;
+  interrupts();
+
+  if (calBalHasta) {                           // calibrando balance desde el centro
+    calBalI += ci; calBalD += cd;
+    if ((long)(millis() - calBalHasta) >= 0) {
+      calBalHasta = 0;
+      if (calBalI < 30 || calBalD < 30) {
+        Serial.printf("Balance: muy poca senal (IZQ %lu, DER %lu). Acercate o subi sensibilidad.%s",
+                      (unsigned long)calBalI, (unsigned long)calBalD, "\n");
+      } else {
+        balanceDer = constrain((float)calBalD / calBalI, 0.05f, 50.0f);
+        Serial.printf("Balance calibrado: DER/IZQ = %.2f (IZQ %lu, DER %lu). S para guardar.%s",
+                      balanceDer, (unsigned long)calBalI, (unsigned long)calBalD, "\n");
+      }
+      enviarEstado();
+    }
+    return;
+  }
+
+  float dn = cd / balanceDer;                  // derecho normalizado
+  float tot = ci + dn;
+  if (tot < VOZ_MIN_PULSOS) return;            // silencio
+  float des = (ci - dn) / tot;                 // +1 = solo IZQ, -1 = solo DER
+  float giro = 0;
+  if (fabs(des) >= VOZ_ZONA)
+    giro = (des > 0 ? 1 : -1) * VOZ_PASO_DEG * min(1.0f, (fabs(des) - VOZ_ZONA) / (1 - VOZ_ZONA) * 2);
+  Serial.printf("@VOZ {\"i\":%lu,\"d\":%lu,\"des\":%.2f,\"giro\":%.1f}%s",
+                (unsigned long)ci, (unsigned long)cd, des, giro, "\n");
+  if (!modoCal && modoAuto && micsGiran && fabs(giro) >= 1.0f)
+    moverPasos(gradosAPasos(giro));
+}
+
 // =====================================================================
 void setup() {
   Serial.begin(115200);
@@ -437,6 +540,13 @@ void loop() {
 
   if (!escuchando || (long)(millis() - ignorarHasta) < 0) {   // resta: segura ante desborde
     limpiarTiempos();
+    noInterrupts(); vozIzq = 0; vozDer = 0; interrupts();   // no contar ruido del motor
+    ultimaVoz = millis();
+    return;
+  }
+  if (modoVoz || calBalHasta) {
+    procesarVoz();
+    limpiarTiempos();                          // en modo voz no se usan los tiempos
     return;
   }
   procesarSonido();
