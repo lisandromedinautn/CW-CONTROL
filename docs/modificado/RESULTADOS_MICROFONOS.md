@@ -68,7 +68,7 @@ Informa cada ventana con `@VOZ {"i":..,"d":..,"des":..,"giro":..}`. Solo mueve e
 |---|---|
 | `E1` / `E0` | Prende o apaga el modo voz |
 | `I` | Calibra el balance: hablar unos 3 s **desde el centro y a la distancia de uso**. Después `S` para guardar |
-| `N<grados>` | Giro máximo por decisión en modo voz (2 a 30, por defecto 15) |
+| `N<grados>` | Giro máximo por decisión en modo voz (2 a 60, por defecto 15) |
 | `H<factor>` | Pone el balance a mano (pulsos DER / pulsos IZQ al centro). Ej: `H6` |
 | `U1` / `U0` | Usa o ignora sonidos que oyó un solo micro |
 

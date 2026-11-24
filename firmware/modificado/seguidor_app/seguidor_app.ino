@@ -46,7 +46,7 @@
 //   U1 / U0      usar / ignorar sonidos que solo oye UN micro (defecto U0 = ignorar)
 //   E1 / E0      modo VOZ por actividad on / off (requiere mics que giran)
 //   I            calibrar balance: hablar ~3 s desde el centro (luego S para guardar)
-//   N<grados>    modo voz: giro maximo por decision (2 a 30). Ej: N10
+//   N<grados>    modo voz: giro maximo por decision (2 a 60). Ej: N10
 //   H<factor>    balance manual = pulsos DER / pulsos IZQ al centro. Ej: H6
 //   S            guardar calibracion en la memoria de la placa
 //   B            volver a la calibracion de fabrica (luego S para guardar)
@@ -368,7 +368,7 @@ void ejecutarComando(char *cmd) {
               if (modoVoz && !micsGiran) Serial.println("AVISO: el modo voz necesita mics que giran (R)");
               Serial.println(modoVoz ? "Modo VOZ (por actividad)" : "Modo voz apagado");
               enviarEstado(); break;
-    case 'N': vozPasoDeg = constrain(v, 2.0f, 30.0f); enviarEstado(); break;
+    case 'N': vozPasoDeg = constrain(v, 2.0f, 60.0f); enviarEstado(); break;
     case 'H': if (v > 0.05f && v < 50.0f) balanceDer = v; enviarEstado(); break;
     case 'I': calBalI = 0; calBalD = 0; calBalHasta = millis() + 3000;
               if (!escuchando) setEscucha(true);
