@@ -107,7 +107,7 @@ unsigned long ultimaVoz = 0;
 const unsigned long VOZ_VENTANA_MS = 200;   // cada cuanto se compara
 const uint32_t VOZ_MIN_PULSOS = 20;         // menos que esto (sumando) = silencio
 const float    VOZ_ZONA       = 0.30;       // |desbalance| menor = al frente
-float          vozPasoDeg     = 10.0;       // giro maximo por decision (comando N)
+float          vozPasoDeg     = 15.0;       // giro maximo por decision (comando N)
 // Suavizado: se decide con la SUMA de las ultimas VOZ_N ventanas (media movil),
 // asi un pico suelto de 200 ms no hace temblar el soporte.
 const int      VOZ_N          = 3;
@@ -501,13 +501,13 @@ void procesarVoz() {
   histI[histPos] = ci; histD[histPos] = cd;
   histPos = (histPos + 1) % VOZ_N;
   if (histLlenas < VOZ_N) histLlenas++;
-  if (histLlenas < VOZ_N) return;              // esperar a tener VOZ_N ventanas con sonido
+  if (histLlenas < 2) return;                  // decidir ya con 2 ventanas (0,4 s), luego con VOZ_N
   ci = 0; cd = 0;
-  for (int k = 0; k < VOZ_N; k++) { ci += histI[k]; cd += histD[k]; }
+  for (int k = 0; k < histLlenas; k++) { ci += histI[k]; cd += histD[k]; }
 
   float dn = cd / balanceDer;                  // derecho normalizado
   float tot = ci + dn;
-  if (tot < VOZ_MIN_PULSOS * VOZ_N) return;    // muy poca senal
+  if (tot < VOZ_MIN_PULSOS * histLlenas) return;    // muy poca senal
   float des = (ci - dn) / tot;                 // +1 = solo IZQ, -1 = solo DER
   float giro = 0;
   if (fabs(des) >= VOZ_ZONA)
@@ -515,7 +515,10 @@ void procesarVoz() {
   Serial.printf("@VOZ {\"i\":%lu,\"d\":%lu,\"des\":%.2f,\"giro\":%.1f}%s",
                 (unsigned long)ci, (unsigned long)cd, des, giro, "\n");
   if (!modoCal && modoAuto && micsGiran && fabs(giro) >= 1.0f)
+  {
     moverPasos(gradosAPasos(giro));
+    ignorarHasta = millis() + 150;             // en voz basta una pausa corta: los contadores se limpian
+  }
 }
 
 // =====================================================================

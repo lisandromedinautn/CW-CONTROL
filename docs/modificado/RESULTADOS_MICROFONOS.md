@@ -68,7 +68,7 @@ Informa cada ventana con `@VOZ {"i":..,"d":..,"des":..,"giro":..}`. Solo mueve e
 |---|---|
 | `E1` / `E0` | Prende o apaga el modo voz |
 | `I` | Calibra el balance: hablar unos 3 s **desde el centro y a la distancia de uso**. Después `S` para guardar |
-| `N<grados>` | Giro máximo por decisión en modo voz (2 a 30, por defecto 10) |
+| `N<grados>` | Giro máximo por decisión en modo voz (2 a 30, por defecto 15) |
 | `H<factor>` | Pone el balance a mano (pulsos DER / pulsos IZQ al centro). Ej: `H6` |
 | `U1` / `U0` | Usa o ignora sonidos que oyó un solo micro |
 
@@ -100,7 +100,7 @@ En la tarjeta **Control** hay un bloque **Seguir voz**:
 - **Voz / Aplausos:** cambia entre el modo voz (`E1`, y además activa micros que giran) y la medición por tiempos (`E0`).
 - **Calibrar balance:** manda `I`. Hay que hablar 3 s desde el frente. Si sale bien, guarda solo (`S`).
 - **Barra IZQ–DER:** muestra el desbalance de cada lectura `@VOZ`. La zona punteada del medio es "al frente" y la marca se pone naranja cuando gira.
-- **Giro por paso:** manda `N<grados>` (por defecto 10°, antes 6° fijos).
+- **Giro por paso:** manda `N<grados>` (por defecto 15°). Después de girar espera solo 150 ms y decide con 2 ventanas (0,4 s), así cada paso tarda unos 0,8 s en vez de 1,5 s.
 
 ## Pendiente para terminar (Marti)
 
