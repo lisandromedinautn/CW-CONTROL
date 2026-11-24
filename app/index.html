@@ -91,6 +91,12 @@
   .res { font-size: 13px; background: var(--bg); border-radius: 8px; padding: 8px; margin: 8px 0; min-height: 36px; }
   .ok { color: var(--mic); font-weight: 600; } .mal { color: var(--danger); font-weight: 600; }
   .aviso { background: var(--limit); border: 1px solid var(--danger); border-radius: 8px; padding: 8px 10px; font-size: 13px; display: none; margin-bottom: 10px; }
+.voz { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 8px; }
+.vozbar { position: relative; flex: 1; min-width: 120px; height: 10px; border-radius: 5px;
+  background: linear-gradient(90deg, #8883, #8881 45%, #8881 55%, #8883); }
+.vozbar::after { content: ''; position: absolute; left: 35%; width: 30%; top: 0; bottom: 0; border-left: 1px dashed #8886; border-right: 1px dashed #8886; }
+#vozMarca { position: absolute; top: -3px; left: 50%; width: 6px; height: 16px; margin-left: -3px; border-radius: 3px; background: #888; transition: left .2s; }
+#vozMarca.gira { background: #e0663a; }
 </style>
 </head>
 <body>
@@ -160,6 +166,29 @@
         <button data-req id="btnIr">Ir</button>
       </div>
       <div class="fila"><button class="parar" id="btnParar" data-req>PARAR</button></div>
+      <div class="voz">
+        <div class="fila">
+          <label class="mini">Seguir voz</label>
+          <div class="seg">
+            <button id="btnVozOn" data-req title="Compara cuánto escucha cada micrófono (sirve para voz)">Voz</button>
+            <button id="btnVozOff" data-req title="Mide la diferencia de tiempo (sirve para aplausos)">Aplausos</button>
+          </div>
+          <button id="btnVozCal" data-req title="Hablá 3 segundos desde el frente del soporte">Calibrar balance</button>
+        </div>
+        <div class="fila">
+          <span class="mini">IZQ</span>
+          <div class="vozbar"><div id="vozMarca"></div></div>
+          <span class="mini">DER</span>
+          <b id="vozTxt" class="mini" style="min-width:90px">–</b>
+        </div>
+        <div class="fila">
+          <span class="mini">Balance: <b id="vozBal">–</b></span>
+          <label class="mini" for="vozPaso" title="Cuánto gira como máximo cada vez que decide (cada ~0,6 s)">Giro por paso (°)</label>
+          <input type="number" id="vozPaso" min="2" max="30" value="10" data-req>
+          <button id="btnVozPaso" data-req>Aplicar</button>
+        </div>
+        <div class="hint" id="vozHint">Modo voz: calibrá el balance hablando 3 s desde el frente; se guarda solo.</div>
+      </div>
 
       <details>
         <summary>Configuración</summary>
@@ -321,7 +350,7 @@ function procesarLinea(linea, sesion = null) {
       actualizarTelemetria();
     }
   }
-  if (!linea.startsWith('@')) return;
+  if (!linea.startsWith('@')) { vozTexto(linea); return; }
   const sp = linea.indexOf(' ');
   const tipo = linea.slice(1, sp);
   let d; try { d = JSON.parse(linea.slice(sp + 1)); } catch { return; }
@@ -334,7 +363,10 @@ function procesarLinea(linea, sesion = null) {
     if (d.k !== undefined) { st.k = d.k; st.pmax = d.pmax; }
     if (d.vel !== undefined) { st.vel = d.vel; st.pausa = d.pausa; }
     if (d.cal !== undefined) { st.cal = !!d.cal; st.off = d.off; st.zona = d.zona; }
+    if (d.voz !== undefined) { st.voz = !!d.voz; st.bal = d.bal; if (d.vpaso !== undefined) st.vpaso = d.vpaso; }
     if (sesion && !sesion.lista) confirmarSerie(sesion);
+  } else if (tipo === 'VOZ') {
+    vozLectura(d);
   } else if (tipo === 'CNT') {
     calActividad(d);
   } else if (tipo === 'SAVED') {
@@ -378,7 +410,7 @@ function actualizarUI() {
   if (!enviar) {
     for (const id of ['dPos', 'dEsc', 'dModo', 'dAbs', 'dDt', 'dSrc', 'dRacha', 'dVel']) $(id).textContent = '–';
     $('btnEscucha').textContent = 'Escucha: –';
-    for (const id of ['btnEscucha', 'btnAuto', 'btnManual', 'btnGiran', 'btnFijos', 'btnCal']) $(id).classList.remove('on');
+    for (const id of ['btnEscucha', 'btnAuto', 'btnManual', 'btnGiran', 'btnFijos', 'btnCal', 'btnVozOn', 'btnVozOff']) $(id).classList.remove('on');
     $('btnCal').textContent = 'Iniciar calibración';
     $('calCuerpo').hidden = true;
     $('calActual').textContent = 'Calibración actual: –';
@@ -401,6 +433,10 @@ function actualizarUI() {
   $('btnManual').classList.toggle('on', !st.auto);
   $('btnGiran').classList.toggle('on', st.giran);
   $('btnFijos').classList.toggle('on', !st.giran);
+  $('btnVozOn').classList.toggle('on', !!st.voz);
+  $('btnVozOff').classList.toggle('on', st.voz === false);
+  $('vozBal').textContent = st.bal !== undefined ? (+st.bal).toFixed(2) : '–';
+  if (st.vpaso !== undefined && document.activeElement !== $('vozPaso')) $('vozPaso').value = st.vpaso;
   $('slider').min = -st.lim; $('slider').max = st.lim;
   if (document.activeElement !== $('limite')) $('limite').value = st.lim;
   if (document.activeElement !== $('ganancia')) $('ganancia').value = st.k;
@@ -423,6 +459,33 @@ $('btnCentro').onclick = () => cmd('C');
 $('btnParar').onclick = () => cmd('X');
 $('btnGiran').onclick = () => cmd('R');
 $('btnFijos').onclick = () => cmd('F');
+$('btnVozOn').onclick = () => { if (!st.giran) cmd('R'); cmd('E1'); };
+$('btnVozOff').onclick = () => cmd('E0');
+$('btnVozPaso').onclick = () => cmd('N' + $('vozPaso').value);
+let vozCalibrando = false;
+$('btnVozCal').onclick = () => {
+  vozCalibrando = true;
+  $('vozHint').textContent = 'Calibrando: hablá de corrido desde el FRENTE del soporte durante 3 segundos…';
+  cmd('I');
+};
+function vozLectura(d) {
+  const des = Math.max(-1, Math.min(1, +d.des || 0));
+  $('vozMarca').style.left = ((1 - des) / 2 * 100) + '%';   // +1 = izquierda
+  $('vozMarca').classList.toggle('gira', Math.abs(+d.giro) >= 1);
+  $('vozTxt').textContent = Math.abs(+d.giro) >= 1 ? (d.giro > 0 ? '◀ gira izq' : 'gira der ▶') : 'al frente';
+}
+function vozTexto(linea) {
+  if (!vozCalibrando) return;
+  if (linea.startsWith('Balance calibrado')) {
+    vozCalibrando = false; cmd('S');
+    $('vozHint').textContent = linea.replace('S para guardar.', 'Guardado en la placa.');
+    mostrarAviso('Balance calibrado y guardado.');
+  } else if (linea.startsWith('Balance:')) {
+    vozCalibrando = false;
+    $('vozHint').textContent = linea;
+    mostrarAviso('No llegó suficiente sonido a los dos micrófonos. Probá de nuevo más cerca o subí la sensibilidad.');
+  }
+}
 $('btnZero').onclick = () => cmd('Z');
 $('btnLimite').onclick = () => cmd('T' + $('limite').value);
 $('btnSuave').onclick = () => { cmd('K' + $('ganancia').value); cmd('P' + $('pmax').value); };

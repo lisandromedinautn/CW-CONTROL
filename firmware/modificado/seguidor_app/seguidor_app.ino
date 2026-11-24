@@ -46,6 +46,7 @@
 //   U1 / U0      usar / ignorar sonidos que solo oye UN micro (defecto U0 = ignorar)
 //   E1 / E0      modo VOZ por actividad on / off (requiere mics que giran)
 //   I            calibrar balance: hablar ~3 s desde el centro (luego S para guardar)
+//   N<grados>    modo voz: giro maximo por decision (2 a 30). Ej: N10
 //   H<factor>    balance manual = pulsos DER / pulsos IZQ al centro. Ej: H6
 //   S            guardar calibracion en la memoria de la placa
 //   B            volver a la calibracion de fabrica (luego S para guardar)
@@ -106,7 +107,7 @@ unsigned long ultimaVoz = 0;
 const unsigned long VOZ_VENTANA_MS = 200;   // cada cuanto se compara
 const uint32_t VOZ_MIN_PULSOS = 20;         // menos que esto (sumando) = silencio
 const float    VOZ_ZONA       = 0.30;       // |desbalance| menor = al frente
-const float    VOZ_PASO_DEG   = 6.0;        // giro maximo por ventana
+float          vozPasoDeg     = 10.0;       // giro maximo por decision (comando N)
 // Suavizado: se decide con la SUMA de las ultimas VOZ_N ventanas (media movil),
 // asi un pico suelto de 200 ms no hace temblar el soporte.
 const int      VOZ_N          = 3;
@@ -219,11 +220,11 @@ void enviarEstado() {
   Serial.printf("@STATE {\"esc\":%d,\"auto\":%d,\"giran\":%d,\"pos\":%ld,"
                 "\"deg\":%.1f,\"lim\":%.0f,\"sep\":%.2f,\"mov\":%d,\"ir\":%d,"
                 "\"k\":%.2f,\"pmax\":%.0f,\"vel\":%d,\"pausa\":%lu,"
-                "\"cal\":%d,\"off\":%ld,\"zona\":%ld,\"unico\":%d,\"voz\":%d,\"bal\":%.2f}\n",
+                "\"cal\":%d,\"off\":%ld,\"zona\":%ld,\"unico\":%d,\"voz\":%d,\"bal\":%.2f,\"vpaso\":%.0f}\n",
                 escuchando, modoAuto, micsGiran, posPasos,
                 pasosAGrados(posPasos), limiteDeg, sepEfectiva, moviendo, USAR_IR,
                 ganancia, maxGiroDeg, velRpm, esperaPostMs,
-                modoCal, offsetUs, zonaMuertaUs, usarUnico, modoVoz, balanceDer);
+                modoCal, offsetUs, zonaMuertaUs, usarUnico, modoVoz, balanceDer, vozPasoDeg);
   ultimoEstado = millis();
 }
 
@@ -367,6 +368,7 @@ void ejecutarComando(char *cmd) {
               if (modoVoz && !micsGiran) Serial.println("AVISO: el modo voz necesita mics que giran (R)");
               Serial.println(modoVoz ? "Modo VOZ (por actividad)" : "Modo voz apagado");
               enviarEstado(); break;
+    case 'N': vozPasoDeg = constrain(v, 2.0f, 30.0f); enviarEstado(); break;
     case 'H': if (v > 0.05f && v < 50.0f) balanceDer = v; enviarEstado(); break;
     case 'I': calBalI = 0; calBalD = 0; calBalHasta = millis() + 3000;
               if (!escuchando) setEscucha(true);
@@ -509,7 +511,7 @@ void procesarVoz() {
   float des = (ci - dn) / tot;                 // +1 = solo IZQ, -1 = solo DER
   float giro = 0;
   if (fabs(des) >= VOZ_ZONA)
-    giro = (des > 0 ? 1 : -1) * VOZ_PASO_DEG * min(1.0f, (fabs(des) - VOZ_ZONA) / (1 - VOZ_ZONA) * 2);
+    giro = (des > 0 ? 1 : -1) * vozPasoDeg * min(1.0f, (fabs(des) - VOZ_ZONA) / (1 - VOZ_ZONA) * 2);
   Serial.printf("@VOZ {\"i\":%lu,\"d\":%lu,\"des\":%.2f,\"giro\":%.1f}%s",
                 (unsigned long)ci, (unsigned long)cd, des, giro, "\n");
   if (!modoCal && modoAuto && micsGiran && fabs(giro) >= 1.0f)

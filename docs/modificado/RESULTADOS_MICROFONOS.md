@@ -68,6 +68,7 @@ Informa cada ventana con `@VOZ {"i":..,"d":..,"des":..,"giro":..}`. Solo mueve e
 |---|---|
 | `E1` / `E0` | Prende o apaga el modo voz |
 | `I` | Calibra el balance: hablar unos 3 s **desde el centro y a la distancia de uso**. Después `S` para guardar |
+| `N<grados>` | Giro máximo por decisión en modo voz (2 a 30, por defecto 10) |
 | `H<factor>` | Pone el balance a mano (pulsos DER / pulsos IZQ al centro). Ej: `H6` |
 | `U1` / `U0` | Usa o ignora sonidos que oyó un solo micro |
 
@@ -92,6 +93,14 @@ Sigue la voz hacia los dos lados, en la dirección correcta y sin oscilar. Con e
 - El firmware con modo voz y suavizado está **cargado en la placa y probado**.
 - En la EEPROM quedaron guardados la separación (0,137 m) y el balance (6,21).
 - El modo voz **no** se guarda: después de reiniciar hay que mandar `E1` (o agregarlo a la app).
+
+## App
+
+En la tarjeta **Control** hay un bloque **Seguir voz**:
+- **Voz / Aplausos:** cambia entre el modo voz (`E1`, y además activa micros que giran) y la medición por tiempos (`E0`).
+- **Calibrar balance:** manda `I`. Hay que hablar 3 s desde el frente. Si sale bien, guarda solo (`S`).
+- **Barra IZQ–DER:** muestra el desbalance de cada lectura `@VOZ`. La zona punteada del medio es "al frente" y la marca se pone naranja cuando gira.
+- **Giro por paso:** manda `N<grados>` (por defecto 10°, antes 6° fijos).
 
 ## Pendiente para terminar (Marti)
 
