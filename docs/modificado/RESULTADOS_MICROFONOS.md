@@ -58,6 +58,8 @@ si |des| < 0,30                -> al frente, no gira
 si no                          -> gira hasta 6° hacia el lado con más actividad
 ```
 
+**Suavizado:** decide con la suma de las últimas 3 ventanas (`VOZ_N`, unos 0,6 s). En silencio y después de cada giro, esa suma vuelve a cero.
+
 Informa cada ventana con `@VOZ {"i":..,"d":..,"des":..,"giro":..}`. Solo mueve el motor en modo automático, con micros que giran (`R`) y fuera de calibración (`Q0`).
 
 ### Comandos nuevos
@@ -71,17 +73,31 @@ Informa cada ventana con `@VOZ {"i":..,"d":..,"des":..,"giro":..}`. Solo mueve e
 
 `@STATE` ahora también incluye `"unico"`, `"voz"` y `"bal"`.
 
+## Prueba del modo voz (con motor)
+
+Primero se subió el potenciómetro del **izquierdo al máximo**. Después se calibró hablando desde el centro: dio **balance = 6,21** (IZQ 731, DER 4541 pulsos en 3 s), y quedó guardado en la EEPROM.
+
+Prueba de 45 s con el motor activo y suavizado de 3 ventanas:
+
+| Tramo | Resultado |
+|---|---|
+| Hablando desde el centro (0–14 s) | Quieto casi todo el tiempo (un solo giro de 4,7°) |
+| Hablando desde la izquierda (15–25 s) | Giró a la izquierda de a 6°, hasta 52,6° |
+| Hablando desde la derecha (26–45 s) | Volvió de forma continua a la derecha, hasta 3,2° (la prueba terminó mientras seguía girando) |
+
+Sigue la voz hacia los dos lados, en la dirección correcta y sin oscilar. Con estos parámetros va a unos 6°/s.
+
 ## Estado
 
-- El firmware **compila**. La versión con detección de ataque se cargó y se midió (prueba 3).
-- El **modo voz no se probó con el hardware** porque la placa quedó apagada.
-- La separación `D0.137` quedó guardada en la EEPROM de la placa.
+- El firmware con modo voz y suavizado está **cargado en la placa y probado**.
+- En la EEPROM quedaron guardados la separación (0,137 m) y el balance (6,21).
+- El modo voz **no** se guarda: después de reiniciar hay que mandar `E1` (o agregarlo a la app).
 
 ## Pendiente para terminar (Marti)
 
 1. **Revisar el módulo derecho.** En la prueba 1 dio cero pulsos y después tuvo un comportamiento errático. Intercambiar los módulos de lado para ver si el problema es el módulo o el cable/pin D2. Revisar la soldadura de la cápsula.
 2. **Ajustar los potenciómetros** a la distancia de uso: los dos con el LED apagado en silencio, y los dos reaccionando a la voz. No hace falta que queden parejos, eso lo corrige el balance.
-3. **Probar el modo voz:** cargar el firmware y mandar `R`, `A`, `E1`, `L1`. Calibrar con `I` hablando desde el centro y guardar con `S`. Hablar desde los costados y verificar que gire hacia el lado correcto. Si gira al revés, cambiar `SENTIDO`.
+3. **Afinar el modo voz** (ya funciona): cargar el firmware y mandar `R`, `A`, `E1`, `L1`. Calibrar con `I` hablando desde el centro y guardar con `S`. Hablar desde los costados y verificar que gire hacia el lado correcto. Si gira al revés, cambiar `SENTIDO`.
 4. **Ajustar las constantes** si hace falta (`VOZ_MIN_PULSOS`, `VOZ_ZONA`, `VOZ_PASO_DEG`, `VOZ_VENTANA_MS`). Si oscila alrededor del centro, subir `VOZ_ZONA` o bajar `VOZ_PASO_DEG`. Si no reacciona, bajar `VOZ_MIN_PULSOS`.
 5. **App (`app/index.html`):** todavía no conoce el modo voz. Falta un botón para `E1`/`E0`, otro para calibrar balance (`I` + `S`), mostrar `bal`/`voz` de `@STATE` y graficar las líneas `@VOZ`.
 6. **Si con estos módulos la voz no alcanza desde la distancia de uso:** cambiarlos por micrófonos con salida analógica y control automático de ganancia (MAX9814) o más ganancia (MAX4466). El ESP8266 tiene un solo ADC, así que para leer dos analógicos haría falta otra placa (ESP32) o un ADC externo.

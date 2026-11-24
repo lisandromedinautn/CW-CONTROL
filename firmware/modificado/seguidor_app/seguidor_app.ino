@@ -107,6 +107,12 @@ const unsigned long VOZ_VENTANA_MS = 200;   // cada cuanto se compara
 const uint32_t VOZ_MIN_PULSOS = 20;         // menos que esto (sumando) = silencio
 const float    VOZ_ZONA       = 0.30;       // |desbalance| menor = al frente
 const float    VOZ_PASO_DEG   = 6.0;        // giro maximo por ventana
+// Suavizado: se decide con la SUMA de las ultimas VOZ_N ventanas (media movil),
+// asi un pico suelto de 200 ms no hace temblar el soporte.
+const int      VOZ_N          = 3;
+uint32_t histI[VOZ_N], histD[VOZ_N];
+int histPos = 0, histLlenas = 0;
+void vaciarHistVoz() { histPos = 0; histLlenas = 0; }
 unsigned long calBalHasta = 0;              // > 0: calibrando balance
 uint32_t calBalI = 0, calBalD = 0;
 
@@ -488,9 +494,18 @@ void procesarVoz() {
     return;
   }
 
+  // En silencio no se suma: la historia se reinicia para no mezclar frases.
+  if (ci + cd / balanceDer < VOZ_MIN_PULSOS / 2) { vaciarHistVoz(); return; }
+  histI[histPos] = ci; histD[histPos] = cd;
+  histPos = (histPos + 1) % VOZ_N;
+  if (histLlenas < VOZ_N) histLlenas++;
+  if (histLlenas < VOZ_N) return;              // esperar a tener VOZ_N ventanas con sonido
+  ci = 0; cd = 0;
+  for (int k = 0; k < VOZ_N; k++) { ci += histI[k]; cd += histD[k]; }
+
   float dn = cd / balanceDer;                  // derecho normalizado
   float tot = ci + dn;
-  if (tot < VOZ_MIN_PULSOS) return;            // silencio
+  if (tot < VOZ_MIN_PULSOS * VOZ_N) return;    // muy poca senal
   float des = (ci - dn) / tot;                 // +1 = solo IZQ, -1 = solo DER
   float giro = 0;
   if (fabs(des) >= VOZ_ZONA)
@@ -541,6 +556,7 @@ void loop() {
   if (!escuchando || (long)(millis() - ignorarHasta) < 0) {   // resta: segura ante desborde
     limpiarTiempos();
     noInterrupts(); vozIzq = 0; vozDer = 0; interrupts();   // no contar ruido del motor
+    vaciarHistVoz();                           // tras girar, medir de nuevo desde cero
     ultimaVoz = millis();
     return;
   }
